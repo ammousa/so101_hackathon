@@ -89,9 +89,19 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
     body_ids, _ = robot.find_bodies("gripper_link")
     ee_body_idx = body_ids[0]
     action_term = base_env.action_manager.get_term("arm_action")
-    command = base_env.command_manager.get_command("leader_joints")
-    half = command.shape[-1] // 2
-    target_joint_pos = command[:, :half]
+    termination_cfg = getattr(getattr(base_env, "cfg", None), "terminations", None)
+    try:
+        leader_robot = base_env.scene["leader_robot"]
+    except Exception:
+        leader_robot = None
+
+    if leader_robot is not None:
+        leader_joint_ids, _ = leader_robot.find_joints(
+            action_term._joint_names, preserve_order=True
+        )
+        target_joint_pos = leader_robot.data.joint_pos[:, leader_joint_ids]
+    else:
+        target_joint_pos = so101_mdp.command_joint_positions(base_env, command_name="leader_joints")
     follower_joint_pos = robot.data.joint_pos[:, action_term._joint_ids]
     joint_error = target_joint_pos - follower_joint_pos
 
@@ -108,32 +118,41 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
         base_env.action_manager.action - base_env.action_manager.prev_action, dim=-1
     )
     invalid_state = ~torch.isfinite(joint_error).all(dim=-1)
-    collision = so101_mdp.illegal_contact(
-        base_env,
-        threshold=5.0,
-        sensor_cfg=SceneEntityCfg(
-            "arm_contact",
-            body_names=[
-                "shoulder_link",
-                "upper_arm_link",
-                "lower_arm_link",
-                "wrist_link",
-                "gripper_link",
-                "moving_jaw_so101_v1_link",
-            ],
-        ),
-    )
     controlled_joint_ids = action_term._joint_ids
     follower_joint_vel = robot.data.joint_vel[:, controlled_joint_ids]
     lower_limits = robot.data.soft_joint_pos_limits[:, controlled_joint_ids, 0] - 0.02
     upper_limits = robot.data.soft_joint_pos_limits[:, controlled_joint_ids, 1] + 0.02
-    excessive_joint_error = torch.any(torch.abs(joint_error) > 0.75, dim=-1)
-    joint_limit_violation = torch.any(
-        (follower_joint_pos < lower_limits) | (follower_joint_pos > upper_limits), dim=-1
-    )
-    unstable_joint_velocity = torch.any(torch.abs(follower_joint_vel) > 2.0, dim=-1) | (
-        ~torch.isfinite(follower_joint_vel).all(dim=-1)
-    )
+    collision = torch.zeros_like(invalid_state)
+    excessive_joint_error = torch.zeros_like(invalid_state)
+    joint_limit_violation = torch.zeros_like(invalid_state)
+    unstable_joint_velocity = torch.zeros_like(invalid_state)
+
+    if getattr(termination_cfg, "collision", None) is not None:
+        collision = so101_mdp.illegal_contact(
+            base_env,
+            threshold=5.0,
+            sensor_cfg=SceneEntityCfg(
+                "arm_contact",
+                body_names=[
+                    "shoulder_link",
+                    "upper_arm_link",
+                    "lower_arm_link",
+                    "wrist_link",
+                    "gripper_link",
+                    "moving_jaw_so101_v1_link",
+                ],
+            ),
+        )
+    if getattr(termination_cfg, "excessive_joint_error", None) is not None:
+        excessive_joint_error = torch.any(torch.abs(joint_error) > 0.75, dim=-1)
+    if getattr(termination_cfg, "joint_limit_violation", None) is not None:
+        joint_limit_violation = torch.any(
+            (follower_joint_pos < lower_limits) | (follower_joint_pos > upper_limits), dim=-1
+        )
+    if getattr(termination_cfg, "unstable_joint_velocity", None) is not None:
+        unstable_joint_velocity = torch.any(torch.abs(follower_joint_vel) > 2.0, dim=-1) | (
+            ~torch.isfinite(follower_joint_vel).all(dim=-1)
+        )
     failure = collision | excessive_joint_error | joint_limit_violation | unstable_joint_velocity
 
     return {

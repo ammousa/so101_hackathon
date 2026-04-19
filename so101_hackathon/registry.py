@@ -9,12 +9,14 @@ import argparse
 import inspect
 from typing import Any
 
+from so101_hackathon.controllers.raw import RawController
 from so101_hackathon.controllers.rl_ppo import PPOController
 from so101_hackathon.controllers.rule_based_pd import TeleopPDController
 
 CONTROLLERS = {
     "ppo": PPOController,
     "pd": TeleopPDController,
+    "raw": RawController,
 }
 
 

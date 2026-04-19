@@ -56,6 +56,7 @@ def _build_cfg_classes():
         "elbow_flex",
         "wrist_flex",
         "wrist_roll",
+        "gripper",
     ]
 
     @configclass
@@ -92,7 +93,7 @@ def _build_cfg_classes():
         leader_joints = so101_mdp.ProceduralJointTrajectoryCommandCfg(
             asset_name="robot",
             joint_names=arm_joint_names,
-            resampling_time_range=(4.0, 4.0),
+            resampling_time_range=(3.5, 4.5),
             waypoint_limit_margin=0.05,
             debug_vis=False,
         )
@@ -105,9 +106,6 @@ def _build_cfg_classes():
             scale=1.0,
             offset=0.0,
             preserve_order=True,
-            soft_velocity_scale=0.75,
-            aggressive_velocity_scale=1.75,
-            aggressive_action_threshold=0.5,
             max_delay=8,
             delay_range=(0, 0),
             noise_std_range=(0.0, 0.0),
@@ -277,15 +275,12 @@ def _enable_eval_leader_robot(
         base_pos[2] + z_offset,
     )
     leader_spawn = env_cfg.scene.robot.spawn.replace(
-        collision_props=sim_utils.CollisionPropertiesCfg(
-            collision_enabled=False),
         visual_material=sim_utils.PreviewSurfaceCfg(
             diffuse_color=color,
             opacity=opacity,
             metallic=0.0,
             roughness=0.2,
         ),
-        activate_contact_sensors=False,
         scale=scale,
     )
     env_cfg.scene.leader_robot = env_cfg.scene.robot.replace(
@@ -322,7 +317,7 @@ def make_teleop_env(
     env_cfg.seed = seed
     env_cfg.sim.device = device
     if record_video:
-        env_cfg.viewer.resolution = (640, 360)
+        env_cfg.viewer.resolution = (1280, 720)
     if num_envs is not None:
         env_cfg.scene.num_envs = num_envs
     if show_leader_ghost:

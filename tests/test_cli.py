@@ -23,7 +23,10 @@ class CliTests(unittest.TestCase):
     def test_list_controllers_script_prints_builtin_names(self):
         result = self._run("scripts/list_controllers.py")
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertEqual(result.stdout.strip().splitlines(), ["pd", "ppo"])
+        self.assertEqual(
+            result.stdout.strip().splitlines(),
+            ["pd", "ppo", "raw"],
+        )
 
     def test_help_commands_work_without_heavy_runtime_deps(self):
         for script_path in ("scripts/train_rl.py", "scripts/evaluate.py", "scripts/play.py"):

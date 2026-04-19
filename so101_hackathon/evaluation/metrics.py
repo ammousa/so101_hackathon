@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
+from so101_hackathon.utils.obs_utils import TELEOP_JOINT_NAMES
+
 
 def _as_list(values: Iterable[float]) -> list[float]:
     return [float(value) for value in values]
@@ -18,7 +20,7 @@ class TeleopMetricAccumulator:
     compute_pose_fn: Callable[[Iterable[float]],
                               tuple[list[float], list[float]]] | None = None
     failure_threshold: float = 0.75
-    joint_count: int = 5
+    joint_count: int = len(TELEOP_JOINT_NAMES)
     _episodes: list[dict[str, float]] = field(
         default_factory=list, init=False, repr=False)
     _step_count: int = field(default=0, init=False, repr=False)
@@ -104,12 +106,12 @@ class TeleopMetricAccumulator:
 
         count = float(len(self._episodes))
         return {
-            "eval/joint_rmse": sum(ep["joint_rmse"] for ep in self._episodes) / count,
-            "eval/max_joint_error": sum(ep["max_joint_error"] for ep in self._episodes) / count,
-            "eval/ee_position_rmse": sum(ep["ee_position_rmse"] for ep in self._episodes) / count,
-            "eval/ee_orientation_rmse_rad": sum(ep["ee_orientation_rmse_rad"] for ep in self._episodes) / count,
-            "eval/max_ee_position_error": sum(ep["max_ee_position_error"] for ep in self._episodes) / count,
-            "eval/command_smoothness": sum(ep["command_smoothness"] for ep in self._episodes) / count,
+            "eval/joint_rmse": round(sum(ep["joint_rmse"] for ep in self._episodes) / count, 4),
+            "eval/max_joint_error": round(sum(ep["max_joint_error"] for ep in self._episodes) / count, 4),
+            "eval/ee_position_rmse": round(sum(ep["ee_position_rmse"] for ep in self._episodes) / count, 4),
+            "eval/ee_orientation_rmse_rad": round(sum(ep["ee_orientation_rmse_rad"] for ep in self._episodes) / count, 4),
+            "eval/max_ee_position_error": round(sum(ep["max_ee_position_error"] for ep in self._episodes) / count, 4),
+            "eval/command_smoothness": round(sum(ep["command_smoothness"] for ep in self._episodes) / count, 4),
             "eval/num_failures": sum(ep["num_failures"] for ep in self._episodes),
             "eval/num_episodes": count,
         }

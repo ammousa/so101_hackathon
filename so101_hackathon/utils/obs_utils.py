@@ -22,6 +22,7 @@ TELEOP_JOINT_NAMES: tuple[str, ...] = (
     "elbow_flex",
     "wrist_flex",
     "wrist_roll",
+    "gripper",
 )
 TELEOP_HISTORY_LENGTH = 1
 TELEOP_TERM_ORDER: tuple[str, ...] = (

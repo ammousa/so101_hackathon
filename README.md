@@ -54,7 +54,7 @@ python scripts/evaluate.py --controller pd --headless
 ```
 
 Key args:
-- `--controller`: controller to run, such as `pd` or `ppo`
+- `--controller`: controller to run, such as `pd`, `ppo` as RL controller or `raw` as a starting template.
 - `--headless`: disable the interactive viewer 
 - `--num-episodes`: number of evaluation episodes to aggregate
 - `--num-envs`: number of parallel Isaac environments
@@ -105,12 +105,13 @@ python scripts/train_rl.py --help
 
 ## Dev guide
 
-1. Start from [so101_hackathon/controllers/templates/my_controller.py](so101_hackathon/controllers/templates/my_controller.py)
+1. Start from [so101_hackathon/controllers/raw.py](so101_hackathon/controllers/raw.py)
 2. Implement `act(obs) -> action`
 3. Register your controller in [so101_hackathon/registry.py](so101_hackathon/registry.py)
 4. Run evaluation and inspect the outputs
 
 Built-in baselines:
+- `raw`: minimal pass-through controller that does nothing but returning the leader joint command directly
 - `pd`: rule-based proportional-derivative controller (not tuned!)
 - `ppo`: learned baseline loaded from an RSL-RL checkpoint
 
@@ -155,8 +156,8 @@ Start with these nested READMEs:
 
 ```bash
 python scripts/list_controllers.py
-python scripts/evaluate.py --controller pd --headless --num-episodes 3
-tensorboard --logdir logs/pd/evaluation
+python scripts/evaluate.py --controller raw --headless --num-episodes 3
+tensorboard --logdir logs/raw/evaluation
 ```
 
-Then replace `pd` with your controller name and try to beat the baseline.
+Then copy `raw.py`, register your controller name, and try to beat the baseline.

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import torch
 from isaaclab.managers import SceneEntityCfg
 
+from .observations import command_joint_positions
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -19,8 +21,7 @@ def joint_error_too_large(
 ) -> torch.Tensor:
     """Terminate when any controlled joint tracking error exceeds the configured threshold."""
     asset = env.scene[asset_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    target_positions = command[:, : command.shape[-1] // 2]
+    target_positions = command_joint_positions(env, command_name=command_name)
     joint_error = torch.abs(target_positions - asset.data.joint_pos[:, asset_cfg.joint_ids])
     return torch.any(joint_error > max_abs_error, dim=-1)
 
