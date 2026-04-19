@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
+import sys
 import traceback
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from so101_hackathon.training.ppo_config import build_teleop_ppo_runner_cfg
 from so101_hackathon.training.runtime_utils import normalize_device_for_runtime
@@ -13,22 +19,93 @@ from so101_hackathon.utils.train_utils import build_training_log_dir
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Train the SO101 teleop PPO baseline.")
-    parser.add_argument("--headless", action="store_true", default=False)
-    parser.add_argument("--num-envs", type=int, default=None)
-    parser.add_argument("--max-iterations", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--delay-steps", type=int, default=None)
-    parser.add_argument("--noise-std", type=float, default=None)
-    parser.add_argument("--experiment-name", type=str,
-                        default="so101_hackathon_teleop")
-    parser.add_argument("--run-name", type=str, default="")
-    parser.add_argument("--resume", action="store_true", default=False)
-    parser.add_argument("--load-run", type=str, default=".*")
-    parser.add_argument("--checkpoint", type=str, default=".*\\.pt")
-    parser.add_argument("--note", type=str, default=None)
-    parser.add_argument("--group", type=str, default=None)
+        description="Train the SO101 teleop PPO baseline.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Launch Isaac Sim without the interactive viewer.",
+    )
+    parser.add_argument(
+        "--num-envs",
+        type=int,
+        default=None,
+        help="Override the number of parallel training environments.",
+    )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Override the PPO training iteration budget.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for training and environment initialization.",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Torch/Isaac device string, for example `cuda:0` or `cpu`.",
+    )
+    parser.add_argument(
+        "--delay-steps",
+        type=int,
+        default=None,
+        help="Override the fixed action delay used by the teleop disturbance model.",
+    )
+    parser.add_argument(
+        "--noise-std",
+        type=float,
+        default=None,
+        help="Override the fixed action noise standard deviation used by the teleop disturbance model.",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="so101_hackathon_teleop",
+        help="Top-level log directory name under `logs/rsl_rl/`.",
+    )
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default="",
+        help="Optional suffix appended to the timestamped training run directory.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Resume training from a previous checkpoint selected by `--load-run` and `--checkpoint`.",
+    )
+    parser.add_argument(
+        "--load-run",
+        type=str,
+        default=".*",
+        help="Regex used to select the training run when `--resume` is enabled.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=".*\\.pt",
+        help="Checkpoint filename or regex used when `--resume` is enabled.",
+    )
+    parser.add_argument(
+        "--note",
+        type=str,
+        default=None,
+        help="Free-form note stored in the training config.",
+    )
+    parser.add_argument(
+        "--group",
+        type=str,
+        default=None,
+        help="Optional experiment grouping label stored in the training config.",
+    )
     return parser
 
 

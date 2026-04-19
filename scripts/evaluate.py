@@ -5,7 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import sys
 import traceback
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from so101_hackathon.registry import create_controller, list_controller_names
 from so101_hackathon.training.runtime_utils import (
@@ -26,39 +32,113 @@ from so101_hackathon.utils.eval_utils import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate any registered SO101 hackathon controller.")
+        description="Evaluate any registered SO101 hackathon controller.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     has_app_launcher_args = add_app_launcher_args(parser)
     parser.add_argument(
-        "--controller", choices=list_controller_names(), default="pd")
-    parser.add_argument("--controller-config", type=str, default=None,
-                        help="Optional YAML override for the controller.")
-    parser.add_argument("--env-config", type=str, default=None,
-                        help="Optional YAML override for the teleop environment.")
-    parser.add_argument("--num-episodes", type=int, default=1)
-    parser.add_argument("--real-time", action="store_true", default=False)
-    parser.add_argument("--video", action="store_true", default=False)
-    parser.add_argument("--video-length", type=int, default=600)
+        "--controller",
+        choices=list_controller_names(),
+        default="pd",
+        help="Controller to run during evaluation.",
+    )
+    parser.add_argument(
+        "--controller-config",
+        type=str,
+        default=None,
+        help="Optional YAML file with controller-specific overrides.",
+    )
+    parser.add_argument(
+        "--env-config",
+        type=str,
+        default=None,
+        help="Optional YAML file with teleop environment overrides.",
+    )
+    parser.add_argument(
+        "--num-episodes",
+        type=int,
+        default=1,
+        help="Number of evaluation episodes to aggregate.",
+    )
+    parser.add_argument(
+        "--real-time",
+        action="store_true",
+        default=False,
+        help="Sleep between steps to roughly match the simulated control rate.",
+    )
+    parser.add_argument(
+        "--video",
+        action="store_true",
+        default=False,
+        help="Record an MP4 of the first evaluation episode.",
+    )
+    parser.add_argument(
+        "--video-length",
+        type=int,
+        default=600,
+        help="Maximum recorded video length in environment steps.",
+    )
     parser.add_argument(
         "--hide-leader-ghost",
         action="store_true",
         default=False,
         help="Disable the leader visualization robot used during teleop evaluation.",
     )
-    parser.add_argument("--output-dir", type=str, default=None)
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Explicit directory for evaluation artifacts. If unset, the repo chooses a task-specific location.",
+    )
     if not has_app_launcher_args:
-        parser.add_argument("--device", type=str, default=None)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--num-envs", type=int, default=50)
-    parser.add_argument("--delay-steps", type=int, default=None)
-    parser.add_argument("--noise-std", type=float, default=None)
+        parser.add_argument(
+            "--device",
+            type=str,
+            default=None,
+            help="Torch/Isaac device string, for example `cuda:0` or `cpu`.",
+        )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed used for environment construction and controller setup.",
+    )
+    parser.add_argument(
+        "--num-envs",
+        type=int,
+        default=50,
+        help="Number of parallel Isaac environments to launch for evaluation.",
+    )
+    parser.add_argument(
+        "--delay-steps",
+        type=int,
+        default=None,
+        help="Override the fixed action delay used by the teleop disturbance model.",
+    )
+    parser.add_argument(
+        "--noise-std",
+        type=float,
+        default=None,
+        help="Override the fixed action noise standard deviation used by the teleop disturbance model.",
+    )
     parser.add_argument(
         "--checkpoint-path",
         type=str,
         default=None,
         help="Full path to the RL checkpoint to load during evaluation.",
     )
-    parser.add_argument("--note", type=str, default=None)
-    parser.add_argument("--group", type=str, default=None)
+    parser.add_argument(
+        "--note",
+        type=str,
+        default=None,
+        help="Free-form note saved into the evaluation config JSON.",
+    )
+    parser.add_argument(
+        "--group",
+        type=str,
+        default=None,
+        help="Optional experiment grouping label saved into the evaluation config JSON.",
+    )
     return parser
 
 

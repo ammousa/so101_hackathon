@@ -322,7 +322,7 @@ def make_teleop_env(
     env_cfg.seed = seed
     env_cfg.sim.device = device
     if record_video:
-        env_cfg.viewer.resolution = (1280, 720)
+        env_cfg.viewer.resolution = (640, 360)
     if num_envs is not None:
         env_cfg.scene.num_envs = num_envs
     if show_leader_ghost:
