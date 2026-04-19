@@ -1,0 +1,8 @@
+experiment_name: so101_hackathon_teleop
+run_name: ""
+device: cpu
+seed: 42
+max_iterations: 1500
+save_interval: 50
+num_steps_per_env: 24
+logger: tensorboard
