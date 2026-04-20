@@ -29,7 +29,7 @@ class CliTests(unittest.TestCase):
         )
 
     def test_help_commands_work_without_heavy_runtime_deps(self):
-        for script_path in ("scripts/train_rl.py", "scripts/evaluate.py", "scripts/play.py"):
+        for script_path in ("scripts/train_rl.py", "scripts/evaluate.py", "scripts/play.py", "scripts/deploy.py"):
             result = self._run(script_path, "--help")
             self.assertEqual(result.returncode, 0, msg=f"{script_path}: {result.stderr}")
             self.assertIn("usage:", result.stdout.lower())

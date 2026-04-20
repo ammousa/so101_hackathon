@@ -1,23 +1,6 @@
 """Unified evaluation and play entrypoints."""
 
 from __future__ import annotations
-
-import argparse
-import json
-import os
-from pathlib import Path
-import sys
-import traceback
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from so101_hackathon.registry import create_controller, list_controller_names
-from so101_hackathon.training.runtime_utils import (
-    apply_video_renderer_fallback,
-    normalize_device_for_runtime,
-)
 from so101_hackathon.utils.eval_utils import (
     add_app_launcher_args,
     build_evaluation_payload,
@@ -28,6 +11,23 @@ from so101_hackathon.utils.eval_utils import (
     write_evaluation_config,
     write_summary_json,
 )
+from so101_hackathon.training.runtime_utils import (
+    apply_video_renderer_fallback,
+    normalize_device_for_runtime,
+)
+from so101_hackathon.registry import create_controller, list_controller_names
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +47,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional YAML file with controller-specific overrides.",
+    )
+    parser.add_argument(
+        "--kp",
+        type=float,
+        default=None,
+        help="Override the PD proportional gain for evaluation.",
+    )
+    parser.add_argument(
+        "--kd",
+        type=float,
+        default=None,
+        help="Override the PD derivative gain for evaluation.",
     )
     parser.add_argument(
         "--env-config",
@@ -142,19 +154,81 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _coerce_override_value(raw_value: str) -> Any:
+    lowered = raw_value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "null":
+        return None
+    try:
+        if any(token in raw_value for token in (".", "e", "E")):
+            return float(raw_value)
+        return int(raw_value)
+    except ValueError:
+        return raw_value
+
+
+def _apply_controller_overrides(
+    controller_config: dict[str, Any],
+    overrides: list[str],
+) -> dict[str, Any]:
+    hydra_key_map = {
+        "kp": "kp",
+        "kd": "kd",
+        "max_action": "max_action",
+        "controller.kp": "kp",
+        "controller.kd": "kd",
+        "controller.max_action": "max_action",
+        "controller_config.kp": "kp",
+        "controller_config.kd": "kd",
+        "controller_config.max_action": "max_action",
+    }
+    remaining: list[str] = []
+
+    for override in overrides:
+        key, sep, raw_value = override.partition("=")
+        if not sep:
+            remaining.append(override)
+            continue
+        mapped_key = hydra_key_map.get(key)
+        if mapped_key is None:
+            remaining.append(override)
+            continue
+        controller_config[mapped_key] = _coerce_override_value(raw_value)
+
+    if remaining:
+        raise SystemExit(
+            "Unrecognized arguments: "
+            + " ".join(remaining)
+            + ". Supported Hydra-style controller overrides are "
+            "`kp=...`, `kd=...`, `max_action=...`, `controller.kp=...`, "
+            "`controller.kd=...`, `controller.max_action=...`."
+        )
+    return controller_config
+
+
 def _run_cli(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, overrides = parser.parse_known_args(argv)
     args.device, args.video = normalize_device_for_runtime(
         requested_device=args.device, wants_video=args.video)
     args.enable_cameras = bool(args.video)
     apply_video_renderer_fallback(args)
     env_config = load_yaml(args.env_config)
     controller_config = load_yaml(args.controller_config)
+    controller_config = _apply_controller_overrides(
+        controller_config, overrides)
     controller_config.setdefault("device", args.device)
     controller_config.setdefault("logger", "tensorboard")
     controller_config.setdefault("seed", args.seed)
     controller_config.setdefault("note", args.note or "")
     controller_config.setdefault("group", args.group or "")
+    if args.kp is not None:
+        controller_config["kp"] = args.kp
+    if args.kd is not None:
+        controller_config["kd"] = args.kd
     if args.checkpoint_path is not None:
         controller_config["checkpoint_path"] = args.checkpoint_path
 

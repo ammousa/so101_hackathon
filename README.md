@@ -12,8 +12,8 @@ This repo is the hackathon playground for the SO101 Robot Arm:
 
 ### 1) Create the environment
 ```bash
-conda create -n sorl python=3.11 -y
-conda activate sorl
+conda create -n hack python=3.11 -y
+conda activate hack
 ```
 
 ### 2) Install PyTorch
@@ -23,10 +23,14 @@ pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorc
 ```
 
 ### 3) Install Isaac Sim and Isaac Lab
+
+Isaacsim installation:
 ```bash
 pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
-isaacsim
-
+isaacsim --headless
+```
+And IsaacLab:
+```bash
 mkdir -p external
 cd external
 git clone https://github.com/isaac-sim/IsaacLab.git
@@ -156,8 +160,7 @@ Start with these nested READMEs:
 
 ```bash
 python scripts/list_controllers.py
-python scripts/evaluate.py --controller raw --headless --num-episodes 3
+python scripts/evaluate.py --controller raw --headless --num-episodes 3 --video
 tensorboard --logdir logs/raw/evaluation
 ```
-
 Then copy `raw.py`, register your controller name, and try to beat the baseline.

@@ -10,6 +10,7 @@ wandb/
 backup/
 outputs/
 test.ipynb
+notebooks/artifacts/*
 # scripts/notebooks/*
 nsrl/envs/isaac/go1/deploy/src
 **/build/

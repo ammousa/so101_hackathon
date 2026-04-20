@@ -17,6 +17,9 @@ class TeleopPDController(BaseController):
     The controller stays intentionally small so students can read it end-to-end.
     It relies on the observation parser instead of reaching into Isaac Lab
     internals, which keeps the baseline focused on controller logic.
+
+    The generic controller interface returns absolute joint targets, so the PD
+    baseline computes a bounded correction around the current follower state.
     """
 
     kp: float = 1.0
@@ -25,17 +28,30 @@ class TeleopPDController(BaseController):
 
     def act(self, obs: Any) -> Any:
         parsed = parse_teleop_observation(obs)
+        leader_joint_pos = parsed["leader_joint_pos"]
         joint_error = parsed["joint_error"]
         joint_error_vel = parsed["joint_error_vel"]
         if hasattr(joint_error, "shape"):
-            action = self.kp * joint_error + self.kd * joint_error_vel
-            return clamp_action(action, limit=self.max_action)
+            follower_joint_pos = leader_joint_pos - joint_error
+            correction = clamp_action(
+                self.kp * joint_error + self.kd * joint_error_vel,
+                limit=self.max_action,
+            )
+            return follower_joint_pos + correction
 
-        return clamp_action(
+        follower_joint_pos = [
+            float(leader) - float(err)
+            for leader, err in zip(leader_joint_pos, joint_error)
+        ]
+        correction = clamp_action(
             [self.kp * float(err) + self.kd * float(err_vel)
              for err, err_vel in zip(joint_error, joint_error_vel)],
             limit=self.max_action,
         )
+        return [
+            float(follower) + float(delta)
+            for follower, delta in zip(follower_joint_pos, correction)
+        ]
 
     def reset(self) -> None:
         """The PD baseline is stateless across episodes."""
