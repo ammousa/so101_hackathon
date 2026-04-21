@@ -1,6 +1,9 @@
 """Train the single PPO baseline for the hackathon repo."""
 
 from __future__ import annotations
+from so101_hackathon.utils.rl_utils import build_training_log_dir
+from so101_hackathon.rl_training.runtime_utils import normalize_device_for_runtime
+from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
 
 import argparse
 import os
@@ -11,10 +14,6 @@ import traceback
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
-from so101_hackathon.training.ppo_config import build_teleop_ppo_runner_cfg
-from so101_hackathon.training.runtime_utils import normalize_device_for_runtime
-from so101_hackathon.utils.train_utils import build_training_log_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     args.device, _ = normalize_device_for_runtime(
         requested_device=args.device, wants_video=False)
     try:
-        from so101_hackathon.training.on_policy_runner import OnPolicyRunner
+        from so101_hackathon.rl_training.on_policy_runner import OnPolicyRunner
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
         raise RuntimeError(
             "Training requires `rsl_rl`, `torch`, and Isaac Lab to be installed."
@@ -158,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         runner = OnPolicyRunner(
             env, cfg.to_dict(), log_dir=log_dir, device=cfg.device)
         if cfg.resume:
-            from so101_hackathon.utils.checkpoints import resolve_checkpoint_path
+            from so101_hackathon.utils.rl_utils import resolve_checkpoint_path
 
             resume_path = resolve_checkpoint_path(
                 log_root, cfg.load_run, cfg.load_checkpoint)

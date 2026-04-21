@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from so101_hackathon.controllers.base import BaseController
-from so101_hackathon.utils.obs_utils import parse_teleop_observation
+from so101_hackathon.utils.rl_utils import parse_teleop_observation
 
 
 @dataclass

@@ -7,7 +7,7 @@ from so101_hackathon.controllers.raw import RawController
 from so101_hackathon.controllers.rl_ppo import PPOController
 from so101_hackathon.controllers.rule_based_pd import TeleopPDController
 from so101_hackathon.registry import create_controller, list_controller_names
-from so101_hackathon.utils.obs_utils import TELEOP_HISTORY_LENGTH, TELEOP_JOINT_NAMES
+from so101_hackathon.utils.rl_utils import TELEOP_HISTORY_LENGTH, TELEOP_JOINT_NAMES
 
 
 def _build_observation(
@@ -21,7 +21,7 @@ def _build_observation(
 
     def write_latest(term_index: int, values: list[float]) -> None:
         start = term_index * term_size + term_size - joint_dim
-        history[start : start + joint_dim] = values
+        history[start: start + joint_dim] = values
 
     write_latest(0, latest_joint_command or [0.0] * joint_dim)
     write_latest(2, latest_error)
@@ -76,7 +76,8 @@ class ControllerTests(unittest.TestCase):
         controller = create_controller(
             "pd",
             env=None,
-            config={"kp": 0.5, "device": "cuda:0", "seed": 7, "logger": "tensorboard"},
+            config={"kp": 0.5, "device": "cuda:0",
+                    "seed": 7, "logger": "tensorboard"},
         )
         self.assertIsInstance(controller, TeleopPDController)
         self.assertEqual(controller.kp, 0.5)
@@ -87,7 +88,8 @@ class ControllerTests(unittest.TestCase):
             "so101_hackathon.controllers.rl_ppo.load_env_free_ppo_policy",
             return_value=fake_policy,
         ):
-            controller = PPOController(env=None, checkpoint_path="/tmp/model.pt")
+            controller = PPOController(
+                env=None, checkpoint_path="/tmp/model.pt")
 
         self.assertIs(controller._policy, fake_policy)
         self.assertEqual(controller.resolved_checkpoint_path, "/tmp/model.pt")

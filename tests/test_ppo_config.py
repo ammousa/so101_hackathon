@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from so101_hackathon.training.ppo_config import TeleopPpoRunnerCfg
+from so101_hackathon.rl_training.ppo_config import TeleopPpoRunnerCfg
 
 
 class TeleopPpoRunnerCfgTests(unittest.TestCase):

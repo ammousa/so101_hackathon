@@ -1,4 +1,4 @@
-"""Shared helpers for evaluation and play entrypoints."""
+"""Shared helpers for evaluation entrypoint."""
 
 from __future__ import annotations
 
@@ -14,7 +14,11 @@ from typing import Any
 
 import yaml
 
-from so101_hackathon.evaluation.metrics import TeleopMetricAccumulator
+from so101_hackathon.sim.robots.so101_follower_spec import (
+    SO101_CONTACT_SENSOR_BODY_NAMES,
+    SO101_EE_BODY_NAME,
+)
+from so101_hackathon.utils.eval_metrics import TeleopMetricAccumulator
 
 
 @dataclass
@@ -86,10 +90,11 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
 
     base_env = env.unwrapped
     robot = base_env.scene["robot"]
-    body_ids, _ = robot.find_bodies("gripper_link")
+    body_ids, _ = robot.find_bodies(SO101_EE_BODY_NAME)
     ee_body_idx = body_ids[0]
     action_term = base_env.action_manager.get_term("arm_action")
-    termination_cfg = getattr(getattr(base_env, "cfg", None), "terminations", None)
+    termination_cfg = getattr(
+        getattr(base_env, "cfg", None), "terminations", None)
     try:
         leader_robot = base_env.scene["leader_robot"]
     except Exception:
@@ -101,18 +106,22 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
         )
         target_joint_pos = leader_robot.data.joint_pos[:, leader_joint_ids]
     else:
-        target_joint_pos = so101_mdp.command_joint_positions(base_env, command_name="leader_joints")
+        target_joint_pos = so101_mdp.command_joint_positions(
+            base_env, command_name="leader_joints")
     follower_joint_pos = robot.data.joint_pos[:, action_term._joint_ids]
     joint_error = target_joint_pos - follower_joint_pos
 
     target_ee_pos, target_ee_quat = compute_so101_ee_pose(
         target_joint_pos, joint_names=action_term._joint_names
     )
-    actual_ee_pos = robot.data.body_pos_w[:, ee_body_idx] - base_env.scene.env_origins
+    actual_ee_pos = robot.data.body_pos_w[:,
+                                          ee_body_idx] - base_env.scene.env_origins
     actual_ee_quat = robot.data.body_quat_w[:, ee_body_idx]
 
-    ee_position_error = torch.linalg.norm(target_ee_pos - actual_ee_pos, dim=-1)
-    quat_alignment = torch.sum(actual_ee_quat * target_ee_quat, dim=-1).abs().clamp(max=1.0)
+    ee_position_error = torch.linalg.norm(
+        target_ee_pos - actual_ee_pos, dim=-1)
+    quat_alignment = torch.sum(
+        actual_ee_quat * target_ee_quat, dim=-1).abs().clamp(max=1.0)
     ee_orientation_error = 2.0 * torch.arccos(quat_alignment)
     action_rate = torch.linalg.norm(
         base_env.action_manager.action - base_env.action_manager.prev_action, dim=-1
@@ -120,8 +129,10 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
     invalid_state = ~torch.isfinite(joint_error).all(dim=-1)
     controlled_joint_ids = action_term._joint_ids
     follower_joint_vel = robot.data.joint_vel[:, controlled_joint_ids]
-    lower_limits = robot.data.soft_joint_pos_limits[:, controlled_joint_ids, 0] - 0.02
-    upper_limits = robot.data.soft_joint_pos_limits[:, controlled_joint_ids, 1] + 0.02
+    lower_limits = robot.data.soft_joint_pos_limits[:,
+                                                    controlled_joint_ids, 0] - 0.02
+    upper_limits = robot.data.soft_joint_pos_limits[:,
+                                                    controlled_joint_ids, 1] + 0.02
     collision = torch.zeros_like(invalid_state)
     excessive_joint_error = torch.zeros_like(invalid_state)
     joint_limit_violation = torch.zeros_like(invalid_state)
@@ -133,18 +144,12 @@ def extract_env_step_metrics(env: Any) -> dict[str, Any]:
             threshold=5.0,
             sensor_cfg=SceneEntityCfg(
                 "arm_contact",
-                body_names=[
-                    "shoulder_link",
-                    "upper_arm_link",
-                    "lower_arm_link",
-                    "wrist_link",
-                    "gripper_link",
-                    "moving_jaw_so101_v1_link",
-                ],
+                body_names=list(SO101_CONTACT_SENSOR_BODY_NAMES),
             ),
         )
     if getattr(termination_cfg, "excessive_joint_error", None) is not None:
-        excessive_joint_error = torch.any(torch.abs(joint_error) > 0.75, dim=-1)
+        excessive_joint_error = torch.any(
+            torch.abs(joint_error) > 0.75, dim=-1)
     if getattr(termination_cfg, "joint_limit_violation", None) is not None:
         joint_limit_violation = torch.any(
             (follower_joint_pos < lower_limits) | (follower_joint_pos > upper_limits), dim=-1
@@ -188,8 +193,10 @@ def evaluate_controller(
     episode_count = 0
     step_count = 0
     max_steps: int | None = None
-    dt = getattr(env, "step_dt", getattr(getattr(env, "unwrapped", None), "step_dt", 0.0))
-    max_episode_length = getattr(getattr(env, "unwrapped", None), "max_episode_length", None)
+    dt = getattr(env, "step_dt", getattr(
+        getattr(env, "unwrapped", None), "step_dt", 0.0))
+    max_episode_length = getattr(
+        getattr(env, "unwrapped", None), "max_episode_length", None)
     if max_episode_length is not None:
         max_steps = int(max_episode_length) * num_episodes
 
@@ -208,7 +215,8 @@ def evaluate_controller(
                 done = coerce_done_flag(done)
             elif len(step_out) == 5:
                 observation, reward, terminated, truncated, info = step_out
-                done = coerce_done_flag(terminated) or coerce_done_flag(truncated)
+                done = coerce_done_flag(
+                    terminated) or coerce_done_flag(truncated)
             else:
                 observation, reward, done, info = step_out
                 done = coerce_done_flag(done)
@@ -218,27 +226,34 @@ def evaluate_controller(
                 progress.update(1)
                 progress.set_postfix(episodes=episode_count, steps=step_count)
 
-            step_metrics = info.get("metrics", {}) if isinstance(info, dict) else {}
+            step_metrics = info.get(
+                "metrics", {}) if isinstance(info, dict) else {}
             if not step_metrics and hasattr(getattr(env, "unwrapped", None), "command_manager"):
                 step_metrics = extract_env_step_metrics(env)
             if step_metrics:
                 metrics.add_step(
-                    joint_error=step_metrics.get("joint_error", [0.0] * metrics.joint_count),
+                    joint_error=step_metrics.get(
+                        "joint_error", [0.0] * metrics.joint_count),
                     action_rate=step_metrics.get("action_rate", 0.0),
-                    ee_position_error=step_metrics.get("ee_position_error", 0.0),
-                    ee_orientation_error=step_metrics.get("ee_orientation_error", 0.0),
-                    invalid_state=bool(step_metrics.get("invalid_state", False)),
+                    ee_position_error=step_metrics.get(
+                        "ee_position_error", 0.0),
+                    ee_orientation_error=step_metrics.get(
+                        "ee_orientation_error", 0.0),
+                    invalid_state=bool(
+                        step_metrics.get("invalid_state", False)),
                     failure=bool(step_metrics.get("failure", False)),
                 )
 
             if step_callback is not None:
-                step_callback(step_count=step_count, reward=reward, done=done, info=info)
+                step_callback(step_count=step_count,
+                              reward=reward, done=done, info=info)
 
             if done:
                 metrics.finish_episode()
                 episode_count += 1
                 if progress is not None:
-                    progress.set_postfix(episodes=episode_count, steps=step_count)
+                    progress.set_postfix(
+                        episodes=episode_count, steps=step_count)
                 if episode_count >= num_episodes:
                     break
                 if not vector_env:
@@ -311,7 +326,8 @@ def load_yaml(path: str | None) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     if not isinstance(data, dict):
-        raise TypeError(f"Expected YAML object in {path}, received {type(data)}")
+        raise TypeError(
+            f"Expected YAML object in {path}, received {type(data)}")
     return data
 
 
@@ -367,7 +383,8 @@ def log_evaluation_metrics(
             writer.add_scalar(name, value, global_step)
         writer.add_text("eval/controller", str(controller_name), global_step)
         if checkpoint_path:
-            writer.add_text("eval/checkpoint_path", str(checkpoint_path), global_step)
+            writer.add_text("eval/checkpoint_path",
+                            str(checkpoint_path), global_step)
     finally:
         writer.close()
 

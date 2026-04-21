@@ -1,4 +1,4 @@
-"""Unified evaluation and play entrypoints."""
+"""Unified evaluation entrypoint."""
 
 from __future__ import annotations
 from so101_hackathon.utils.eval_utils import (
@@ -11,7 +11,7 @@ from so101_hackathon.utils.eval_utils import (
     write_evaluation_config,
     write_summary_json,
 )
-from so101_hackathon.training.runtime_utils import (
+from so101_hackathon.rl_training.runtime_utils import (
     apply_video_renderer_fallback,
     normalize_device_for_runtime,
 )

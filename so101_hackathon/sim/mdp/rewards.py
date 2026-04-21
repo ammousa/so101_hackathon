@@ -44,3 +44,9 @@ def joint_acceleration_l2(
 ) -> torch.Tensor:
     asset = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.joint_acc[:, asset_cfg.joint_ids]), dim=-1)
+
+
+def action_magnitude_l2(env: "ManagerBasedRLEnv") -> torch.Tensor:
+    """Penalize large residual policy outputs."""
+
+    return torch.sum(torch.square(env.action_manager.action), dim=-1)

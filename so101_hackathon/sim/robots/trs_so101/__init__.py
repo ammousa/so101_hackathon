@@ -1,3 +1,3 @@
-from .so_arm101 import SO_ARM101_CFG
+"""Deprecated legacy robot package kept only for historical assets."""
 
-__all__ = ["SO_ARM101_CFG"]
+__all__: list[str] = []

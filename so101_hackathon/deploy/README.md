@@ -28,6 +28,55 @@ That script:
 - blends controller output with direct leader teleop using `--controller-coeff` / `--rl_coeff`
 - writes deploy outputs under `logs/<controller>/deploy/...` or under the PPO training run when a checkpoint is used
 
+## PPO semantics
+
+- The current PPO controller is a residual-compensation policy.
+- It does not output a full absolute robot target by itself.
+- During deployment, the PPO output is added to the live leader joint command, then clamped and sent to the follower.
+- This keeps the policy deployable using only robot-available observations.
+
+## Calibration
+
+Use the repo-local calibration script before the first deploy or after changing motors, wiring, or arm mechanics.
+
+Calibrate the leader:
+
+```bash
+python scripts/calibrate_hardware.py \
+  --role leader \
+  --port /dev/ttyACM1 \
+  --id my_awesome_leader_arm
+```
+
+Calibrate the follower:
+
+```bash
+python scripts/calibrate_hardware.py \
+  --role follower \
+  --port /dev/ttyACM0 \
+  --id my_awesome_follower_arm
+```
+
+Follower without gripper:
+
+```bash
+python scripts/calibrate_hardware.py \
+  --role follower \
+  --port /dev/ttyACM0 \
+  --id my_awesome_follower_arm \
+  --disable-gripper
+```
+
+Interactive calibration flow:
+
+1. Run the script for the arm you want to calibrate.
+2. Move the arm to the middle of its range of motion and press `Enter`.
+3. Move every joint through its full range of motion.
+4. Press `Enter` again to finish and save the calibration JSON.
+
+By default, calibration files are written to `~/.cache/huggingface/lerobot/calibration/`.
+The deploy and teleop paths in this repo read from that directory.
+
 ## How to deploy PD
 
 Deploy the built-in PD controller with the default hardware ports:
@@ -103,5 +152,5 @@ python scripts/deploy.py \
 Future controllers should become deployable automatically as long as they:
 
 - use the shared teleop observation layout
-- return absolute joint targets in the same action space as evaluation
+- return actions whose runtime semantics are clearly defined in the deploy loop
 - are registered in `so101_hackathon/registry.py`

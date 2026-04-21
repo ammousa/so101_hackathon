@@ -12,6 +12,7 @@ from isaaclab.managers import CommandTerm, CommandTermCfg
 from isaaclab.utils import configclass
 
 from so101_hackathon.sim.kinematics import compute_so101_ee_jacobian, compute_so101_ee_position
+from so101_hackathon.sim.robots.so101_follower_spec import SO101_EE_BODY_NAME
 
 from .adaptive_curriculum_utils import compute_episode_joint_rmse, sample_duration_range
 
@@ -41,7 +42,7 @@ class TaskSpaceLeaderCommandCfg(CommandTermCfg):
 
     class_type: type[CommandTerm] = MISSING  # type: ignore
     asset_name: str = "robot"
-    body_name: str = "gripper_link"
+    body_name: str = SO101_EE_BODY_NAME
     joint_names: list[str] = MISSING  # type: ignore
     gripper_joint_name: str = "gripper"
     preserve_order: bool = True
@@ -449,7 +450,8 @@ class TaskSpaceLeaderCommand(CommandTerm):
             )
         end_joint_pos = start_joint_pos.clone()
         end_joint_pos[:, self.arm_local_indices] = arm_joint_pos
-        end_joint_pos[:, self.gripper_local_idx: self.gripper_local_idx + 1] = desired_gripper
+        end_joint_pos[:, self.gripper_local_idx: self.gripper_local_idx +
+                      1] = desired_gripper
         return end_joint_pos
 
     def _compute_position_jacobian(self, arm_joint_pos: torch.Tensor, current_position: torch.Tensor) -> torch.Tensor:
@@ -464,8 +466,3 @@ class TaskSpaceLeaderCommand(CommandTerm):
         delta = jacobian_t @ torch.linalg.solve(
             jacobian @ jacobian_t + lambda_matrix, position_error.unsqueeze(-1))
         return delta.squeeze(-1)
-
-
-# Backward-compatible aliases for older config references.
-ProceduralJointTrajectoryCommandCfg = TaskSpaceLeaderCommandCfg
-ProceduralJointTrajectoryCommand = TaskSpaceLeaderCommand

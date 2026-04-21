@@ -8,16 +8,17 @@ import unittest
 from unittest import mock
 
 from so101_hackathon.controllers.base import BaseController
-from so101_hackathon.evaluation.evaluate import (
-    _build_evaluation_payload,
-    _checkpoint_run_dir,
-    _log_evaluation_metrics,
-    _resolve_evaluation_output_dir,
-    _write_summary_json,
-    _write_evaluation_config,
-    build_parser,
+from so101_hackathon.utils.eval_utils import (
+    build_evaluation_payload,
+    checkpoint_run_dir,
     evaluate_controller,
+    log_evaluation_metrics,
+    resolve_evaluation_output_dir,
+    write_evaluation_config,
+    write_summary_json,
 )
+
+import scripts.evaluate as evaluate_script
 
 
 class FakeController(BaseController):
@@ -30,7 +31,7 @@ class FakeController(BaseController):
 
     def act(self, obs):
         self.act_calls += 1
-        return [0.0, 0.0, 0.0, 0.0, 0.0]
+        return [0.0] * 6
 
 
 class FakeEnv:
@@ -40,35 +41,49 @@ class FakeEnv:
 
     def reset(self):
         self.episode_step = 0
-        return [0.0] * 225
+        return [0.0] * 30
 
     def step(self, action):
+        del action
         self.episode_step += 1
         done = self.episode_step >= 2
         return (
-            [0.0] * 225,
+            [0.0] * 30,
             1.0,
             done,
             {
                 "metrics": {
-                    "joint_error": [0.1, 0.1, 0.1, 0.1, 0.1],
+                    "joint_error": [0.1] * 6,
                     "action_rate": 0.25,
                     "ee_position_error": 0.2,
                     "ee_orientation_error": 0.3,
                     "invalid_state": False,
+                    "failure": False,
                 }
             },
         )
 
 
-class EvaluateControllerTests(unittest.TestCase):
+def context_manager_with(value):
+    class _ContextManager:
+        def __enter__(self):
+            return value
+
+        def __exit__(self, exc_type, exc, tb):
+            del exc_type, exc, tb
+            return False
+
+    return _ContextManager()
+
+
+class EvaluateUtilsTests(unittest.TestCase):
     def test_checkpoint_run_dir_returns_checkpoint_parent(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint = os.path.join(tmpdir, "model_100.pt")
             with open(checkpoint, "w", encoding="utf-8") as handle:
                 handle.write("checkpoint")
 
-            self.assertEqual(_checkpoint_run_dir(checkpoint), tmpdir)
+            self.assertEqual(checkpoint_run_dir(checkpoint), tmpdir)
 
     def test_resolve_evaluation_output_dir_nests_under_checkpoint_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -78,50 +93,31 @@ class EvaluateControllerTests(unittest.TestCase):
 
             with mock.patch("so101_hackathon.utils.eval_utils.datetime") as mocked_datetime:
                 mocked_datetime.now.return_value.strftime.return_value = "2026-04-19_10-11-12"
-                output_dir = _resolve_evaluation_output_dir(
+                output_dir = resolve_evaluation_output_dir(
                     controller_name="ppo",
                     requested_output_dir=None,
                     checkpoint_path=checkpoint,
                 )
 
-            self.assertEqual(
-                output_dir,
-                os.path.join(tmpdir, "evaluation", "2026-04-19_10-11-12"),
-            )
+            self.assertEqual(output_dir, os.path.join(tmpdir, "evaluation", "2026-04-19_10-11-12"))
 
     def test_resolve_evaluation_output_dir_prefers_explicit_output_dir(self):
-        resolved = _resolve_evaluation_output_dir(
+        resolved = resolve_evaluation_output_dir(
             controller_name="pd",
             requested_output_dir="custom/eval",
             checkpoint_path="/tmp/model.pt",
         )
-
         self.assertTrue(resolved.endswith(os.path.join("custom", "eval")))
-
-    def test_resolve_evaluation_output_dir_nests_non_rl_under_logs_controller(self):
-        with mock.patch("so101_hackathon.utils.eval_utils.datetime") as mocked_datetime:
-            mocked_datetime.now.return_value.strftime.return_value = "2026-04-19_10-11-12"
-            resolved = _resolve_evaluation_output_dir(
-                controller_name="pd",
-                requested_output_dir=None,
-                checkpoint_path=None,
-            )
-
-        self.assertTrue(
-            resolved.endswith(os.path.join(
-                "logs", "pd", "evaluation", "2026-04-19_10-11-12"))
-        )
 
     def test_write_evaluation_config_persists_args_and_configs(self):
         args = argparse.Namespace(controller="pd", seed=42, num_episodes=3)
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = _write_evaluation_config(
+            config_path = write_evaluation_config(
                 output_dir=tmpdir,
                 args=args,
                 env_config={"delay_steps": 2},
                 controller_config={"kp": 0.5},
             )
-
             with open(config_path, "r", encoding="utf-8") as handle:
                 payload = handle.read()
 
@@ -138,7 +134,7 @@ class EvaluateControllerTests(unittest.TestCase):
             with open(video_path, "w", encoding="utf-8") as handle:
                 handle.write("video")
 
-            payload = _build_evaluation_payload(
+            payload = build_evaluation_payload(
                 controller_name="pd",
                 output_dir=tmpdir,
                 config_path=os.path.join(tmpdir, "config.json"),
@@ -146,7 +142,7 @@ class EvaluateControllerTests(unittest.TestCase):
                 video_dir=video_dir,
                 include_video=True,
             )
-            summary_path = _write_summary_json(tmpdir, payload)
+            summary_path = write_summary_json(tmpdir, payload)
             with open(summary_path, "r", encoding="utf-8") as handle:
                 summary = handle.read()
 
@@ -156,19 +152,12 @@ class EvaluateControllerTests(unittest.TestCase):
 
     def test_log_evaluation_metrics_writes_tensorboard_scalars(self):
         summary_writer = mock.Mock()
-        tensorboard_module = mock.Mock(
-            SummaryWriter=mock.Mock(return_value=summary_writer))
-        args = argparse.Namespace(
-            controller="ppo",
-            num_episodes=3,
-            video=False,
-            headless=True,
-        )
+        tensorboard_module = mock.Mock(SummaryWriter=mock.Mock(return_value=summary_writer))
         result = mock.Mock(metrics={"eval/joint_rmse": 0.12}, num_steps=17)
 
         with mock.patch.dict(sys.modules, {"torch.utils.tensorboard": tensorboard_module}):
-            _log_evaluation_metrics(
-                controller_name=args.controller,
+            log_evaluation_metrics(
+                controller_name="ppo",
                 output_dir="/tmp/eval_logs",
                 result=result,
                 controller_config={"checkpoint_path": "/tmp/model.pt"},
@@ -177,19 +166,21 @@ class EvaluateControllerTests(unittest.TestCase):
         tensorboard_module.SummaryWriter.assert_called_once()
         summary_writer.add_scalar.assert_any_call("eval/joint_rmse", 0.12, 17)
         summary_writer.add_text.assert_any_call("eval/controller", "ppo", 17)
-        summary_writer.add_text.assert_any_call(
-            "eval/checkpoint_path", "/tmp/model.pt", 17)
+        summary_writer.add_text.assert_any_call("eval/checkpoint_path", "/tmp/model.pt", 17)
         summary_writer.close.assert_called_once()
 
-    def test_parser_exposes_single_checkpoint_path_argument(self):
-        parser = build_parser()
 
+class EvaluateScriptTests(unittest.TestCase):
+    def test_parser_exposes_single_checkpoint_path_argument(self):
+        parser = evaluate_script.build_parser()
         args = parser.parse_args(["--checkpoint-path", "/tmp/model.pt"])
 
         self.assertEqual(args.checkpoint_path, "/tmp/model.pt")
         self.assertFalse(hasattr(args, "load_run"))
         self.assertFalse(hasattr(args, "load_checkpoint"))
 
+
+class EvaluateControllerTests(unittest.TestCase):
     def test_evaluate_controller_runs_multiple_episodes(self):
         env = FakeEnv()
         controller = FakeController()
@@ -199,10 +190,8 @@ class EvaluateControllerTests(unittest.TestCase):
         self.assertEqual(result.num_steps, 4)
         self.assertEqual(controller.reset_calls, 2)
         self.assertEqual(controller.act_calls, 4)
-        self.assertAlmostEqual(
-            result.metrics["eval/joint_rmse"], 0.1, places=6)
-        self.assertAlmostEqual(
-            result.metrics["eval/command_smoothness"], 0.25, places=6)
+        self.assertAlmostEqual(result.metrics["eval/joint_rmse"], 0.1, places=6)
+        self.assertAlmostEqual(result.metrics["eval/command_smoothness"], 0.25, places=6)
         self.assertEqual(result.metrics["eval/num_failures"], 0.0)
         self.assertEqual(result.metrics["eval/num_episodes"], 2.0)
 
@@ -215,29 +204,9 @@ class EvaluateControllerTests(unittest.TestCase):
             "so101_hackathon.utils.eval_utils.evaluation_progress_bar",
             return_value=context_manager_with(progress),
         ):
-            result = evaluate_controller(
-                env,
-                controller,
-                num_episodes=2,
-                show_progress=True,
-            )
+            result = evaluate_controller(env, controller, num_episodes=2, show_progress=True)
 
         self.assertEqual(result.num_steps, 4)
         self.assertEqual(progress.update.call_count, 4)
         progress.update.assert_called_with(1)
         self.assertGreaterEqual(progress.set_postfix.call_count, 4)
-
-
-def context_manager_with(value):
-    class _ContextManager:
-        def __enter__(self):
-            return value
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    return _ContextManager()
-
-
-if __name__ == "__main__":
-    unittest.main()

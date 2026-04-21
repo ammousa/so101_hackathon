@@ -7,6 +7,13 @@ from typing import Iterable
 
 import torch
 
+from so101_hackathon.sim.robots.so101_follower_spec import (
+    SO101_ARM_JOINT_NAMES,
+    SO101_KINEMATIC_ARM_JOINTS,
+    SO101_KINEMATICS_ORIGINS_RPY,
+    SO101_KINEMATICS_ORIGINS_XYZ,
+)
+
 
 def _rpy_to_matrix(roll: float, pitch: float, yaw: float) -> torch.Tensor:
     cr, sr = math.cos(roll), math.sin(roll)
@@ -74,31 +81,10 @@ def _quat_from_matrix(matrix: torch.Tensor) -> torch.Tensor:
     return quat / torch.linalg.norm(quat, dim=-1, keepdim=True).clamp(min=1e-8)
 
 
-_SO101_ARM_JOINTS: tuple[str, ...] = (
-    "shoulder_pan",
-    "shoulder_lift",
-    "elbow_flex",
-    "wrist_flex",
-    "wrist_roll",
-)
-
-_SO101_JOINT_ORIGINS_XYZ: tuple[tuple[float, float, float], ...] = (
-    (0.0388353, -8.97657e-09, 0.0624),
-    (-0.0303992, -0.0182778, -0.0542),
-    (-0.11257, -0.028, 1.73763e-16),
-    (-0.1349, 0.0052, 3.62355e-17),
-    (5.55112e-17, -0.0611, 0.0181),
-)
-_SO101_JOINT_ORIGINS_RPY: tuple[tuple[float, float, float], ...] = (
-    (3.14159, 4.18253e-17, -3.14159),
-    (-1.5708, -1.5708, 0.0),
-    (-3.63608e-16, 8.74301e-16, 1.5708),
-    (4.02456e-15, 8.67362e-16, -1.5708),
-    (1.5708, 0.0486795, 3.14159),
-)
+_SO101_ARM_JOINTS: tuple[str, ...] = SO101_KINEMATIC_ARM_JOINTS
 _SO101_LOCAL_Z_AXIS = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32)
-_SO101_ORIGIN_ROTATIONS = tuple(_rpy_to_matrix(*rpy) for rpy in _SO101_JOINT_ORIGINS_RPY)
-_SO101_ORIGIN_TRANSLATIONS = tuple(torch.tensor(xyz, dtype=torch.float32) for xyz in _SO101_JOINT_ORIGINS_XYZ)
+_SO101_ORIGIN_ROTATIONS = tuple(_rpy_to_matrix(*rpy) for rpy in SO101_KINEMATICS_ORIGINS_RPY)
+_SO101_ORIGIN_TRANSLATIONS = tuple(torch.tensor(xyz, dtype=torch.float32) for xyz in SO101_KINEMATICS_ORIGINS_XYZ)
 
 
 def _prepare_arm_joint_positions(

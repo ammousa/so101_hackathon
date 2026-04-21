@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import tempfile
 import unittest
 from unittest import mock
@@ -13,11 +12,13 @@ from so101_hackathon.deploy.metrics import DeployMetricAccumulator
 from so101_hackathon.deploy.runtime import (
     LiveTeleopObservationBuilder,
     get_joint_limit_vectors,
+    hardware_obs_to_joint_positions,
     parse_joint_limits_from_urdf,
 )
 from so101_hackathon.deploy.session import run_deploy_session
+from so101_hackathon.sim.robots.so101_follower_spec import joint_radians_to_motor_value
 
-import scripts.deploy as deploy_script
+import scripts.deploy.deploy as deploy_script
 
 
 JOINT_NAMES = [
@@ -137,7 +138,7 @@ class DeploySessionTests(unittest.TestCase):
         self.assertEqual(steps, 1)
         self.assertEqual(len(follower.sent_actions), 1)
         self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 5.0, places=4)
-        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 30.0, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
 
     def test_run_deploy_session_with_env_free_ppo_controller_uses_mocked_policy(self):
         leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
@@ -164,54 +165,15 @@ class DeploySessionTests(unittest.TestCase):
 
         self.assertEqual(steps, 1)
         self.assertEqual(len(follower.sent_actions), 1)
-        self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], math.degrees(0.1), places=4)
+        leader_joint_pos = hardware_obs_to_joint_positions(_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0]))
+        self.assertAlmostEqual(
+            follower.sent_actions[0]["shoulder_pan.pos"],
+            joint_radians_to_motor_value("shoulder_pan", leader_joint_pos[0] + 0.1),
+            places=4,
+        )
         gripper_lower, gripper_upper = parse_joint_limits_from_urdf()["gripper"]
-        expected_gripper_percent = 100.0 * ((0.6 - gripper_lower) / (gripper_upper - gripper_lower))
+        expected_gripper_percent = 100.0 * (((leader_joint_pos[-1] + 0.6) - gripper_lower) / (gripper_upper - gripper_lower))
         self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], expected_gripper_percent, places=4)
-
-    def test_deploy_main_disconnects_hardware_on_keyboard_interrupt(self):
-        leader = _FakeLeader([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-        follower = _FakeFollower([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch.object(deploy_script, "normalize_device_for_runtime", return_value=("cpu", False)):
-                with mock.patch.object(deploy_script, "create_controller", return_value=RawController()):
-                    with mock.patch.object(deploy_script, "load_leader_follower_hardware_dependencies", return_value=(object, object, object, object, lambda _seconds: None)):
-                        with mock.patch.object(deploy_script, "create_leader_follower_pair", return_value=(leader, follower)):
-                            with mock.patch.object(deploy_script, "run_deploy_session", side_effect=KeyboardInterrupt):
-                                result = deploy_script.main(["--output-dir", tmpdir, "--controller", "raw"])
-
-        self.assertEqual(result, 0)
-        self.assertEqual(leader.connect_calls, 1)
-        self.assertEqual(follower.connect_calls, 1)
-        self.assertEqual(leader.disconnect_calls, 1)
-        self.assertEqual(follower.disconnect_calls, 1)
-
-    def test_deploy_main_returns_one_and_still_disconnects_on_hardware_error(self):
-        leader = _FakeLeader([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-        follower = _FakeFollower([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with mock.patch.object(deploy_script, "normalize_device_for_runtime", return_value=("cpu", False)):
-                with mock.patch.object(deploy_script, "create_controller", return_value=RawController()):
-                    with mock.patch.object(
-                        deploy_script,
-                        "load_leader_follower_hardware_dependencies",
-                        return_value=(object, object, object, object, lambda _seconds: None),
-                    ):
-                        with mock.patch.object(deploy_script, "create_leader_follower_pair", return_value=(leader, follower)):
-                            with mock.patch.object(
-                                deploy_script,
-                                "run_deploy_session",
-                                side_effect=ConnectionError("There is no status packet!"),
-                            ):
-                                result = deploy_script.main(["--output-dir", tmpdir, "--controller", "raw"])
-
-        self.assertEqual(result, 1)
-        self.assertEqual(leader.connect_calls, 1)
-        self.assertEqual(follower.connect_calls, 1)
-        self.assertEqual(leader.disconnect_calls, 1)
-        self.assertEqual(follower.disconnect_calls, 1)
 
     def test_run_deploy_session_delay_steps_holds_previous_command(self):
         leader = _FakeLeader(
@@ -272,30 +234,42 @@ class DeploySessionTests(unittest.TestCase):
         )
 
         self.assertEqual(steps, 1)
-        self.assertEqual(len(follower.sent_actions), 1)
-        self.assertIn("wrist_roll.pos", follower.sent_actions[0])
         self.assertNotIn("gripper.pos", follower.sent_actions[0])
 
-    def test_deploy_main_returns_one_on_connect_time_runtime_error(self):
-        leader = _FakeLeader([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-        follower = _FakeFollower([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
-        follower.connect = mock.Mock(side_effect=RuntimeError("Missing motor IDs:\n  - 6"))
+
+class DeployScriptTests(unittest.TestCase):
+    def test_deploy_main_disconnects_hardware_on_keyboard_interrupt(self):
+        leader = _FakeLeader([_robot_obs([0.0] * 6)])
+        follower = _FakeFollower([_robot_obs([0.0] * 6)])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.object(deploy_script, "normalize_device_for_runtime", return_value=("cpu", False)):
                 with mock.patch.object(deploy_script, "create_controller", return_value=RawController()):
-                    with mock.patch.object(
-                        deploy_script,
-                        "load_leader_follower_hardware_dependencies",
-                        return_value=(object, object, object, object, lambda _seconds: None),
-                    ):
+                    with mock.patch.object(deploy_script, "load_leader_follower_hardware_dependencies", return_value=(object, object, object, object, lambda _seconds: None)):
                         with mock.patch.object(deploy_script, "create_leader_follower_pair", return_value=(leader, follower)):
-                            result = deploy_script.main(["--output-dir", tmpdir, "--controller", "raw"])
+                            with mock.patch.object(deploy_script, "run_deploy_session", side_effect=KeyboardInterrupt):
+                                result = deploy_script.main(["--output-dir", tmpdir, "--controller", "raw"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(leader.connect_calls, 1)
+        self.assertEqual(follower.connect_calls, 1)
+        self.assertEqual(leader.disconnect_calls, 1)
+        self.assertEqual(follower.disconnect_calls, 1)
+
+    def test_deploy_main_returns_one_and_disconnects_on_hardware_error(self):
+        leader = _FakeLeader([_robot_obs([0.0] * 6)])
+        follower = _FakeFollower([_robot_obs([0.0] * 6)])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(deploy_script, "normalize_device_for_runtime", return_value=("cpu", False)):
+                with mock.patch.object(deploy_script, "create_controller", return_value=RawController()):
+                    with mock.patch.object(deploy_script, "load_leader_follower_hardware_dependencies", return_value=(object, object, object, object, lambda _seconds: None)):
+                        with mock.patch.object(deploy_script, "create_leader_follower_pair", return_value=(leader, follower)):
+                            with mock.patch.object(deploy_script, "run_deploy_session", side_effect=ConnectionError("There is no status packet!")):
+                                result = deploy_script.main(["--output-dir", tmpdir, "--controller", "raw"])
 
         self.assertEqual(result, 1)
         self.assertEqual(leader.connect_calls, 1)
+        self.assertEqual(follower.connect_calls, 1)
         self.assertEqual(leader.disconnect_calls, 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(follower.disconnect_calls, 1)

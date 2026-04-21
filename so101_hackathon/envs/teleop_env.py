@@ -2,30 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-
-@dataclass
-class TeleopEnvLaunch:
-    """Return both the launched Isaac app and the wrapped environment."""
-
-    simulation_app: Any
-    env: Any
+from so101_hackathon.envs.base_env import BaseHackathonEnvBuilder, TeleopEnvLaunch
+from so101_hackathon.sim.robots.so101_follower_spec import (
+    SO101_CONTACT_SENSOR_BODY_NAMES,
+    SO101_JOINT_NAMES,
+)
 
 
 def _require_isaac_stack() -> None:
-    missing = []
-    for module_name in ("isaaclab", "gymnasium", "isaaclab_rl"):
-        try:
-            __import__(module_name)
-        except ModuleNotFoundError:
-            missing.append(module_name)
-    if missing:  # pragma: no cover - depends on runtime environment
-        raise RuntimeError(
-            "The teleop environment requires the Isaac Lab runtime stack. "
-            f"Missing modules: {', '.join(missing)}"
-        )
+    BaseHackathonEnvBuilder().require_isaac_stack()
 
 
 def _build_cfg_classes():
@@ -48,16 +35,9 @@ def _build_cfg_classes():
     from isaaclab.utils import configclass
     from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-    from so101_hackathon.sim.robots import SO_ARM101_CFG
+    from so101_hackathon.sim.robots import SO101_FOLLOWER_CFG
 
-    arm_joint_names = [
-        "shoulder_pan",
-        "shoulder_lift",
-        "elbow_flex",
-        "wrist_flex",
-        "wrist_roll",
-        "gripper",
-    ]
+    arm_joint_names = list(SO101_JOINT_NAMES)
 
     @configclass
     class TeleopSceneCfg(InteractiveSceneCfg):
@@ -77,7 +57,7 @@ def _build_cfg_classes():
         robot: ArticulationCfg | None = None
         leader_robot: ArticulationCfg | None = None
         arm_contact = ContactSensorCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/(shoulder_link|upper_arm_link|lower_arm_link|wrist_link|gripper_link|moving_jaw_so101_v1_link)",
+            prim_path="{ENV_REGEX_NS}/Robot/(shoulder_pan|shoulder_lift|elbow_flex|wrist_flex|wrist_roll|gripper|jaw)",
             update_period=0.0,
             history_length=3,
             debug_vis=False,
@@ -90,7 +70,7 @@ def _build_cfg_classes():
 
     @configclass
     class CommandsCfg:
-        leader_joints = so101_mdp.ProceduralJointTrajectoryCommandCfg(
+        leader_joints = so101_mdp.TaskSpaceLeaderCommandCfg(
             asset_name="robot",
             joint_names=arm_joint_names,
             resampling_time_range=(3.5, 4.5),
@@ -100,10 +80,11 @@ def _build_cfg_classes():
 
     @configclass
     class ActionsCfg:
-        arm_action: ActionTerm = so101_mdp.AbsoluteJointPositionActionCfg(
+        arm_action: ActionTerm = so101_mdp.ResidualJointPositionActionCfg(
             asset_name="robot",
             joint_names=arm_joint_names,
-            scale=1.0,
+            command_name="leader_joints",
+            scale=0.25,
             offset=0.0,
             preserve_order=True,
             max_delay=8,
@@ -166,6 +147,10 @@ def _build_cfg_classes():
             params={"asset_cfg": SceneEntityCfg(
                 "robot", joint_names=arm_joint_names)},
         )
+        action_magnitude = RewTerm(
+            func=so101_mdp.action_magnitude_l2,
+            weight=-5.0e-3,
+        )
 
     @configclass
     class TerminationsCfg:
@@ -176,14 +161,7 @@ def _build_cfg_classes():
                 "threshold": 5.0,
                 "sensor_cfg": SceneEntityCfg(
                     "arm_contact",
-                    body_names=[
-                        "shoulder_link",
-                        "upper_arm_link",
-                        "lower_arm_link",
-                        "wrist_link",
-                        "gripper_link",
-                        "moving_jaw_so101_v1_link",
-                    ],
+                    body_names=list(SO101_CONTACT_SENSOR_BODY_NAMES),
                 ),
             },
         )
@@ -239,10 +217,24 @@ def _build_cfg_classes():
         curriculum: CurriculumCfg = CurriculumCfg()
 
         def __post_init__(self):
-            self.scene.robot = SO_ARM101_CFG.replace(
+            legacy_joint_pos = {
+                "shoulder_pan": 0.0,
+                "shoulder_lift": 0.0,
+                "elbow_flex": 0.0,
+                "wrist_flex": 1.57,
+                "wrist_roll": 0.0,
+                "gripper": 0.0,
+            }
+            self.scene.robot = SO101_FOLLOWER_CFG.replace(
                 prim_path="{ENV_REGEX_NS}/Robot",
-                spawn=SO_ARM101_CFG.spawn.replace(
+                spawn=SO101_FOLLOWER_CFG.spawn.replace(
                     activate_contact_sensors=True),
+                init_state=SO101_FOLLOWER_CFG.init_state.replace(
+                    pos=(0.0, 0.0, 0.0),
+                    rot=(1.0, 0.0, 0.0, 0.0),
+                    joint_pos=legacy_joint_pos,
+                    joint_vel={".*": 0.0},
+                ),
             )
             self.decimation = 2
             self.sim.dt = 1.0 / 60.0
@@ -290,6 +282,48 @@ def _enable_eval_leader_robot(
     )
 
 
+class TrainingTeleopEnvBuilder(BaseHackathonEnvBuilder):
+    """Builder for the legacy training/evaluation teleop environment."""
+
+    env_id = "so101-hackathon-teleop"
+
+    def build_env_cfg(
+        self,
+        *,
+        num_envs: int | None = None,
+        seed: int = 42,
+        device: str = "cpu",
+        delay_steps: int | None = None,
+        noise_std: float | None = None,
+        record_video: bool = False,
+        show_leader_ghost: bool = False,
+        eval_time_out_only: bool = False,
+        **_: Any,
+    ) -> Any:
+        teleop_env_cfg_cls = _build_cfg_classes()
+        env_cfg = teleop_env_cfg_cls()
+        env_cfg.seed = seed
+        env_cfg.sim.device = device
+        if record_video:
+            env_cfg.viewer.resolution = (1280, 720)
+        if num_envs is not None:
+            env_cfg.scene.num_envs = num_envs
+        if show_leader_ghost:
+            _enable_eval_leader_robot(env_cfg)
+        if eval_time_out_only:
+            env_cfg.terminations.collision = None
+            env_cfg.terminations.excessive_joint_error = None
+            env_cfg.terminations.joint_limit_violation = None
+            env_cfg.terminations.unstable_joint_velocity = None
+
+        arm_action = env_cfg.actions.arm_action
+        if hasattr(arm_action, "fixed_delay_steps"):
+            arm_action.fixed_delay_steps = delay_steps
+        if hasattr(arm_action, "fixed_noise_std"):
+            arm_action.fixed_noise_std = noise_std
+        return env_cfg
+
+
 def make_teleop_env(
     *,
     headless: bool = False,
@@ -307,57 +341,26 @@ def make_teleop_env(
     eval_time_out_only: bool = False,
 ) -> Any:
     """Create the single teleop environment used by all controllers."""
-
-    _require_isaac_stack()
-    import gymnasium as gym
-    from so101_hackathon.training.runtime_utils import validate_rgb_rendering
-
-    teleop_env_cfg_cls = _build_cfg_classes()
-    env_cfg = teleop_env_cfg_cls()
-    env_cfg.seed = seed
-    env_cfg.sim.device = device
-    if record_video:
-        env_cfg.viewer.resolution = (1280, 720)
-    if num_envs is not None:
-        env_cfg.scene.num_envs = num_envs
-    if show_leader_ghost:
-        _enable_eval_leader_robot(env_cfg)
-    if eval_time_out_only:
-        env_cfg.terminations.collision = None
-        env_cfg.terminations.excessive_joint_error = None
-        env_cfg.terminations.joint_limit_violation = None
-        env_cfg.terminations.unstable_joint_velocity = None
-
-    arm_action = env_cfg.actions.arm_action
-    if hasattr(arm_action, "fixed_delay_steps"):
-        arm_action.fixed_delay_steps = delay_steps
-    if hasattr(arm_action, "fixed_noise_std"):
-        arm_action.fixed_noise_std = noise_std
-
-    env = gym.make("so101-hackathon-teleop", cfg=env_cfg,
-                   render_mode="rgb_array" if enable_cameras or record_video else None)
-    if record_video:
-        if video_dir is None:
-            raise ValueError(
-                "video_dir must be provided when record_video=True")
-        render_ok, render_reason = validate_rgb_rendering(env)
-        if not render_ok:
-            print(
-                f"[WARN] Video probe reported invalid frames: {render_reason}.")
-            print(
-                "[WARN] Continuing video recording anyway because --video was explicitly requested.")
-        env = gym.wrappers.RecordVideo(
-            env,
-            video_folder=video_dir,
-            step_trigger=lambda step: step == 0,
-            video_length=video_length,
-            disable_logger=True,
-        )
-    if wrap_for_rl:
-        from so101_hackathon.training.rsl_rl_wrapper import RslRlVecEnvWrapper
-
-        env = RslRlVecEnvWrapper(env)
-    return env
+    builder = TrainingTeleopEnvBuilder()
+    env_cfg = builder.build_env_cfg(
+        num_envs=num_envs,
+        seed=seed,
+        device=device,
+        delay_steps=delay_steps,
+        noise_std=noise_std,
+        record_video=record_video,
+        show_leader_ghost=show_leader_ghost,
+        eval_time_out_only=eval_time_out_only,
+    )
+    return builder.make_env(
+        env_id=builder.env_id,
+        env_cfg=env_cfg,
+        enable_cameras=enable_cameras,
+        record_video=record_video,
+        video_dir=video_dir,
+        video_length=video_length,
+        wrap_for_rl=wrap_for_rl,
+    )
 
 
 def launch_and_make_teleop_env(
@@ -382,12 +385,13 @@ def launch_and_make_teleop_env(
     The function hides the Isaac Lab application setup so students can focus on
     controller code instead of simulator bootstrapping.
     """
+    builder = TrainingTeleopEnvBuilder()
+    builder.require_isaac_stack()
 
-    _require_isaac_stack()
     import argparse
+    import gymnasium as gym
 
     from isaaclab.app import AppLauncher
-    import gymnasium as gym
 
     if app_launcher_args is None:
         parser = argparse.ArgumentParser(add_help=False)
@@ -402,6 +406,7 @@ def launch_and_make_teleop_env(
         parser_args = parser.parse_args(launch_args)
     else:
         parser_args = app_launcher_args
+
     app_launcher = AppLauncher(parser_args)
     simulation_app = app_launcher.app
 
@@ -412,15 +417,13 @@ def launch_and_make_teleop_env(
             entry_point="isaaclab.envs:ManagerBasedRLEnv",
             disable_env_checker=True,
         )
-
     env = make_teleop_env(
-        headless=headless,
+        enable_cameras=enable_cameras,
         num_envs=num_envs,
         seed=seed,
         device=device,
         delay_steps=delay_steps,
         noise_std=noise_std,
-        enable_cameras=enable_cameras,
         wrap_for_rl=wrap_for_rl,
         record_video=record_video,
         video_dir=video_dir,
@@ -428,4 +431,7 @@ def launch_and_make_teleop_env(
         show_leader_ghost=show_leader_ghost,
         eval_time_out_only=eval_time_out_only,
     )
-    return TeleopEnvLaunch(simulation_app=simulation_app, env=env)
+    return TeleopEnvLaunch(
+        simulation_app=simulation_app,
+        env=env,
+    )

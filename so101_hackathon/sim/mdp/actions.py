@@ -60,7 +60,7 @@ class AbsoluteJointPositionActionCfg(JointActionCfg):
 
 
 class ResidualJointPositionAction(JointAction):
-    """Apply policy outputs as residual corrections on top of procedural joint targets."""
+    """Apply policy outputs as residual corrections on top of joint targets."""
 
     cfg: ResidualJointPositionActionCfg
 
@@ -78,10 +78,14 @@ class ResidualJointPositionAction(JointAction):
         self._noise_std_range = cfg.noise_std_range
         self._fixed_delay_steps = cfg.fixed_delay_steps
         self._fixed_noise_std = cfg.fixed_noise_std
-        self._curriculum_delay_steps = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
-        self._curriculum_noise_std = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
-        self._has_curriculum_disturbance = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self._noise_mask = torch.zeros((1, self.action_dim), dtype=torch.float32, device=self.device)
+        self._curriculum_delay_steps = torch.zeros(
+            self.num_envs, dtype=torch.int, device=self.device)
+        self._curriculum_noise_std = torch.zeros(
+            self.num_envs, dtype=torch.float32, device=self.device)
+        self._has_curriculum_disturbance = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device)
+        self._noise_mask = torch.zeros(
+            (1, self.action_dim), dtype=torch.float32, device=self.device)
         for joint_index in cfg.noise_joint_indices:
             if 0 <= int(joint_index) < self.action_dim:
                 self._noise_mask[0, int(joint_index)] = 1.0
@@ -114,28 +118,34 @@ class ResidualJointPositionAction(JointAction):
     ) -> None:
         """Provide per-env disturbance samples to be consumed on the next reset."""
 
-        env_ids_tensor = _env_ids_to_tensor(env_ids, self.num_envs, self.device)
+        env_ids_tensor = _env_ids_to_tensor(
+            env_ids, self.num_envs, self.device)
         if isinstance(delay_steps, torch.Tensor):
-            self._curriculum_delay_steps[env_ids_tensor] = delay_steps.to(device=self.device, dtype=torch.int)
+            self._curriculum_delay_steps[env_ids_tensor] = delay_steps.to(
+                device=self.device, dtype=torch.int)
         else:
             self._curriculum_delay_steps[env_ids_tensor] = int(delay_steps)
         if isinstance(noise_std, torch.Tensor):
-            self._curriculum_noise_std[env_ids_tensor] = noise_std.to(device=self.device, dtype=torch.float32)
+            self._curriculum_noise_std[env_ids_tensor] = noise_std.to(
+                device=self.device, dtype=torch.float32)
         else:
             self._curriculum_noise_std[env_ids_tensor] = float(noise_std)
         self._has_curriculum_disturbance[env_ids_tensor] = True
 
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
-        command_term = self._env.command_manager.get_term(self.cfg.command_name)
+        command_term = self._env.command_manager.get_term(
+            self.cfg.command_name)
         if hasattr(command_term, "target_joint_positions"):
             target_positions = command_term.target_joint_positions
         else:
-            command = self._env.command_manager.get_command(self.cfg.command_name)
+            command = self._env.command_manager.get_command(
+                self.cfg.command_name)
             target_positions = command[:, : self.action_dim]
         delayed_commands = self._delay_buffer.compute(
             target_positions + self.processed_actions)
-        noise = torch.randn_like(delayed_commands) * self._noise_std.unsqueeze(-1) * self._noise_mask
+        noise = torch.randn_like(delayed_commands) * \
+            self._noise_std.unsqueeze(-1) * self._noise_mask
         lower_limits = self._asset.data.soft_joint_pos_limits[:,
                                                               self._joint_ids, 0]
         upper_limits = self._asset.data.soft_joint_pos_limits[:,
@@ -155,7 +165,8 @@ class ResidualJointPositionAction(JointAction):
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         env_ids = slice(None) if env_ids is None else env_ids  # type: ignore
-        env_ids_tensor = _env_ids_to_tensor(env_ids, self.num_envs, self.device)
+        env_ids_tensor = _env_ids_to_tensor(
+            env_ids, self.num_envs, self.device)
         super().reset(env_ids)
         self._applied_actions[env_ids] = 0.0
         self._delay_buffer.reset(env_ids)
@@ -194,10 +205,14 @@ class AbsoluteJointPositionAction(JointAction):
         self._noise_std_range = cfg.noise_std_range
         self._fixed_delay_steps = cfg.fixed_delay_steps
         self._fixed_noise_std = cfg.fixed_noise_std
-        self._curriculum_delay_steps = torch.zeros(self.num_envs, dtype=torch.int, device=self.device)
-        self._curriculum_noise_std = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
-        self._has_curriculum_disturbance = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        self._noise_mask = torch.zeros((1, self.action_dim), dtype=torch.float32, device=self.device)
+        self._curriculum_delay_steps = torch.zeros(
+            self.num_envs, dtype=torch.int, device=self.device)
+        self._curriculum_noise_std = torch.zeros(
+            self.num_envs, dtype=torch.float32, device=self.device)
+        self._has_curriculum_disturbance = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device)
+        self._noise_mask = torch.zeros(
+            (1, self.action_dim), dtype=torch.float32, device=self.device)
         for joint_index in cfg.noise_joint_indices:
             if 0 <= int(joint_index) < self.action_dim:
                 self._noise_mask[0, int(joint_index)] = 1.0
@@ -230,13 +245,16 @@ class AbsoluteJointPositionAction(JointAction):
     ) -> None:
         """Provide per-env disturbance samples to be consumed on the next reset."""
 
-        env_ids_tensor = _env_ids_to_tensor(env_ids, self.num_envs, self.device)
+        env_ids_tensor = _env_ids_to_tensor(
+            env_ids, self.num_envs, self.device)
         if isinstance(delay_steps, torch.Tensor):
-            self._curriculum_delay_steps[env_ids_tensor] = delay_steps.to(device=self.device, dtype=torch.int)
+            self._curriculum_delay_steps[env_ids_tensor] = delay_steps.to(
+                device=self.device, dtype=torch.int)
         else:
             self._curriculum_delay_steps[env_ids_tensor] = int(delay_steps)
         if isinstance(noise_std, torch.Tensor):
-            self._curriculum_noise_std[env_ids_tensor] = noise_std.to(device=self.device, dtype=torch.float32)
+            self._curriculum_noise_std[env_ids_tensor] = noise_std.to(
+                device=self.device, dtype=torch.float32)
         else:
             self._curriculum_noise_std[env_ids_tensor] = float(noise_std)
         self._has_curriculum_disturbance[env_ids_tensor] = True
@@ -253,7 +271,8 @@ class AbsoluteJointPositionAction(JointAction):
             max=upper_limits,
         )
         delayed_commands = self._delay_buffer.compute(commanded_positions)
-        noise = torch.randn_like(delayed_commands) * self._noise_std.unsqueeze(-1) * self._noise_mask
+        noise = torch.randn_like(delayed_commands) * \
+            self._noise_std.unsqueeze(-1) * self._noise_mask
         self._applied_actions = torch.clamp(
             delayed_commands + noise, min=lower_limits, max=upper_limits)
 
@@ -263,7 +282,8 @@ class AbsoluteJointPositionAction(JointAction):
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         env_ids = slice(None) if env_ids is None else env_ids  # type: ignore
-        env_ids_tensor = _env_ids_to_tensor(env_ids, self.num_envs, self.device)
+        env_ids_tensor = _env_ids_to_tensor(
+            env_ids, self.num_envs, self.device)
         super().reset(env_ids)
         self._applied_actions[env_ids] = 0.0
         self._delay_buffer.reset(env_ids)

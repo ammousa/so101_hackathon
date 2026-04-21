@@ -11,8 +11,8 @@ from typing import Any
 
 from so101_hackathon.controllers.base import BaseController
 from so101_hackathon.controllers.ppo_loader import load_env_free_ppo_policy
-from so101_hackathon.training.ppo_config import build_teleop_ppo_runner_cfg
-from so101_hackathon.utils.checkpoints import resolve_checkpoint_path
+from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
+from so101_hackathon.utils.rl_utils import resolve_checkpoint_path
 
 
 @dataclass
@@ -30,6 +30,7 @@ class PPOController(BaseController):
     run_name: str = ""
     note: str = ""
     group: str = ""
+    action_mode: str = "residual"
     env: Any | None = None
     resolved_checkpoint_path: str | None = field(default=None, init=False)
     _runner_cfg: Any | None = field(default=None, init=False, repr=False)
@@ -61,18 +62,20 @@ class PPOController(BaseController):
                 checkpoint_path=checkpoint_path,
                 device=self.device,
                 actor_hidden_dims=self._runner_cfg.actor_hidden_dims,
-                empirical_normalization=bool(self._runner_cfg.empirical_normalization),
+                empirical_normalization=bool(
+                    self._runner_cfg.empirical_normalization),
             )
 
         try:
-            from so101_hackathon.training.on_policy_runner import OnPolicyRunner
+            from so101_hackathon.rl_training.on_policy_runner import OnPolicyRunner
         except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
             raise RuntimeError(
                 "PPOController requires `rsl_rl` to be installed. "
                 "Install the full runtime dependencies before using the PPO baseline."
             ) from exc
 
-        runner = OnPolicyRunner(self.env, self._runner_cfg.to_dict(), log_dir=None, device=self.device)
+        runner = OnPolicyRunner(
+            self.env, self._runner_cfg.to_dict(), log_dir=None, device=self.device)
         runner.load(checkpoint_path)
         return runner.get_inference_policy(device=self.env.unwrapped.device)
 

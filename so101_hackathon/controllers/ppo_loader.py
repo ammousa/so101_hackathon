@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from so101_hackathon.utils.obs_utils import (
+from so101_hackathon.utils.rl_utils import (
     TELEOP_HISTORY_LENGTH,
     TELEOP_JOINT_NAMES,
     TELEOP_TERM_ORDER,
 )
 
-PPO_OBS_DIM = len(TELEOP_TERM_ORDER) * len(TELEOP_JOINT_NAMES) * TELEOP_HISTORY_LENGTH
+PPO_OBS_DIM = len(TELEOP_TERM_ORDER) * \
+    len(TELEOP_JOINT_NAMES) * TELEOP_HISTORY_LENGTH
 PPO_ACTION_DIM = len(TELEOP_JOINT_NAMES)
 _GAUSSIAN_DISTRIBUTION_CLASS = "rsl_rl.modules.distribution:GaussianDistribution"
 
@@ -29,17 +30,20 @@ def _import_rsl_rl_inference_deps():
     try:
         import torch
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
-        raise RuntimeError("Env-free PPO inference requires `torch` to be installed.") from exc
+        raise RuntimeError(
+            "Env-free PPO inference requires `torch` to be installed.") from exc
 
     try:
         from tensordict import TensorDict
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
-        raise RuntimeError("Env-free PPO inference requires `tensordict` from the RSL-RL stack.") from exc
+        raise RuntimeError(
+            "Env-free PPO inference requires `tensordict` from the RSL-RL stack.") from exc
 
     try:
         from rsl_rl.models import MLPModel
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
-        raise RuntimeError("Env-free PPO inference requires `rsl_rl` to be installed.") from exc
+        raise RuntimeError(
+            "Env-free PPO inference requires `rsl_rl` to be installed.") from exc
 
     return torch, TensorDict, MLPModel
 
@@ -47,11 +51,13 @@ def _import_rsl_rl_inference_deps():
 def _load_checkpoint_payload(torch_module: Any, checkpoint_path: str, device: str) -> dict[str, Any]:
     load_kwargs = {"map_location": device}
     try:
-        payload = torch_module.load(checkpoint_path, weights_only=False, **load_kwargs)
+        payload = torch_module.load(
+            checkpoint_path, weights_only=False, **load_kwargs)
     except TypeError:  # pragma: no cover - older torch versions
         payload = torch_module.load(checkpoint_path, **load_kwargs)
     if not isinstance(payload, dict):
-        raise TypeError(f"PPO checkpoint must deserialize into a dict, received {type(payload)}")
+        raise TypeError(
+            f"PPO checkpoint must deserialize into a dict, received {type(payload)}")
     return payload
 
 
@@ -61,7 +67,8 @@ def _extract_actor_state_dict(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         state_dict = payload
     if not isinstance(state_dict, dict):
-        raise TypeError(f"Actor state dict must be a dict, received {type(state_dict)}")
+        raise TypeError(
+            f"Actor state dict must be a dict, received {type(state_dict)}")
     return state_dict
 
 
@@ -77,11 +84,14 @@ class EnvFreePpoPolicy:
     def __call__(self, obs: Any) -> Any:
         obs = _unwrap_policy_observation(obs)
         if isinstance(obs, list):
-            obs_tensor = self.torch_module.tensor(obs, dtype=self.torch_module.float32, device=self.device)
+            obs_tensor = self.torch_module.tensor(
+                obs, dtype=self.torch_module.float32, device=self.device)
         elif hasattr(obs, "to"):
-            obs_tensor = obs.to(device=self.device, dtype=self.torch_module.float32)
+            obs_tensor = obs.to(device=self.device,
+                                dtype=self.torch_module.float32)
         else:
-            obs_tensor = self.torch_module.tensor(list(obs), dtype=self.torch_module.float32, device=self.device)
+            obs_tensor = self.torch_module.tensor(
+                list(obs), dtype=self.torch_module.float32, device=self.device)
 
         if obs_tensor.ndim == 1:
             obs_tensor = obs_tensor.unsqueeze(0)
@@ -90,7 +100,8 @@ class EnvFreePpoPolicy:
                 f"Expected PPO deploy observation dim {PPO_OBS_DIM}, received {tuple(obs_tensor.shape)}"
             )
 
-        observation = self.tensor_dict_cls({"policy": obs_tensor}, batch_size=[obs_tensor.shape[0]])
+        observation = self.tensor_dict_cls(
+            {"policy": obs_tensor}, batch_size=[obs_tensor.shape[0]])
         with self.torch_module.inference_mode():
             action = self.actor(observation)
         if action.ndim > 1 and action.shape[0] == 1:
@@ -109,7 +120,8 @@ def load_env_free_ppo_policy(
 
     torch_module, tensor_dict_cls, mlp_model_cls = _import_rsl_rl_inference_deps()
     dummy_obs = tensor_dict_cls(
-        {"policy": torch_module.zeros((1, PPO_OBS_DIM), dtype=torch_module.float32, device=device)},
+        {"policy": torch_module.zeros(
+            (1, PPO_OBS_DIM), dtype=torch_module.float32, device=device)},
         batch_size=[1],
     )
     actor = mlp_model_cls(

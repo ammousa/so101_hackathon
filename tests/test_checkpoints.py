@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 
-from so101_hackathon.utils.checkpoints import resolve_checkpoint_path
+from so101_hackathon.utils.rl_utils import resolve_checkpoint_path
 
 
 class CheckpointResolutionTests(unittest.TestCase):
@@ -29,9 +29,11 @@ class CheckpointResolutionTests(unittest.TestCase):
             with open(os.path.join(run_b, "model_20.pt"), "w", encoding="utf-8") as handle:
                 handle.write("newer")
 
-            resolved = resolve_checkpoint_path(tmpdir, r"2026-04-.*", r"model_.*\.pt")
+            resolved = resolve_checkpoint_path(
+                tmpdir, r"2026-04-.*", r"model_.*\.pt")
 
-            self.assertTrue(resolved.endswith("2026-04-02_12-00-00/model_20.pt"))
+            self.assertTrue(resolved.endswith(
+                "2026-04-02_12-00-00/model_20.pt"))
 
 
 if __name__ == "__main__":

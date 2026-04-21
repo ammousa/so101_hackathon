@@ -14,6 +14,7 @@ from so101_hackathon.deploy.runtime import (
     hardware_obs_to_joint_positions,
     normalize_controller_action,
 )
+from so101_hackathon.utils.rl_utils import clamp_action
 
 
 def run_deploy_session(
@@ -61,14 +62,28 @@ def run_deploy_session(
             follower_observation=follower_observation,
             dt=dt,
         )
-        controller_action = normalize_controller_action(controller.act(live_obs.observation))
-        blended_action = blend_with_leader(
-            live_obs.leader_joint_pos,
-            controller_action,
-            float(args.controller_coeff),
-        )
+        controller_action = normalize_controller_action(
+            controller.act(live_obs.observation))
+        if getattr(controller, "action_mode", "absolute") == "residual":
+            residual_action = clamp_action(
+                controller_action,
+                limit=1.0,
+            )
+            if hasattr(residual_action, "tolist"):
+                residual_action = residual_action.tolist()
+            blended_action = [
+                float(leader) + float(args.controller_coeff) * float(residual)
+                for leader, residual in zip(live_obs.leader_joint_pos, residual_action)
+            ]
+        else:
+            blended_action = blend_with_leader(
+                live_obs.leader_joint_pos,
+                controller_action,
+                float(args.controller_coeff),
+            )
         disturbed_action = disturbance_channel.apply(blended_action)
-        commanded_joint_pos = clamp_joint_positions(disturbed_action, lower_limits, upper_limits)
+        commanded_joint_pos = clamp_joint_positions(
+            disturbed_action, lower_limits, upper_limits)
         follower_action = build_follower_action(
             commanded_joint_pos,
             active_joint_names=active_follower_joint_names,
@@ -92,7 +107,8 @@ def run_deploy_session(
             print("  " + metrics.format_last_joint_errors())
 
         elapsed = time_fn() - loop_start
-        sleep_fn(max(1.0 / max(int(getattr(args, "fps", DEFAULT_FPS)), 1) - elapsed, 0.0))
+        sleep_fn(
+            max(1.0 / max(int(getattr(args, "fps", DEFAULT_FPS)), 1) - elapsed, 0.0))
         previous_sample_time = sample_time
 
         if getattr(args, "teleop_time_s", None) is not None and sample_time - start_time >= float(args.teleop_time_s):

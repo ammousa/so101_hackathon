@@ -9,9 +9,10 @@ setup(
     include_package_data=True,
     package_data={
         "so101_hackathon": [
-            "sim/robots/trs_so101/LICENSE",
-            "sim/robots/trs_so101/urdf/so_arm101.urdf",
-            "sim/robots/trs_so101/urdf/assets/*.stl",
+            "assets/robots/*.usd",
+            "assets/scenes/kitchen_with_orange/scene.usd",
+            "assets/scenes/kitchen_with_orange/assets/textures/*.png",
+            "assets/scenes/kitchen_with_orange/objects/*/*.usd",
             "configs/*.yaml",
         ]
     },
@@ -22,7 +23,7 @@ setup(
     python_requires=">=3.11",
     entry_points={
         "console_scripts": [
-            "so101-hackathon-train=so101_hackathon.training.train_ppo:main",
+            "so101-hackathon-train=so101_hackathon.rl_training.train_ppo:main",
             "so101-hackathon-evaluate=so101_hackathon.evaluation.evaluate:main",
             "so101-hackathon-play=so101_hackathon.evaluation.evaluate:play_main",
             "so101-hackathon-list-controllers=so101_hackathon.registry:cli_main",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Iterable
 
-from so101_hackathon.utils.obs_utils import TELEOP_JOINT_NAMES
+from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 
 
 def _as_list(values: Iterable[float]) -> list[float]:
@@ -35,7 +35,8 @@ class DeployMetricAccumulator:
         self.sum_abs = {joint_name: 0.0 for joint_name in self.joint_names}
         self.sum_sq = {joint_name: 0.0 for joint_name in self.joint_names}
         self.max_abs = {joint_name: 0.0 for joint_name in self.joint_names}
-        self.last_abs_err = {joint_name: 0.0 for joint_name in self.joint_names}
+        self.last_abs_err = {
+            joint_name: 0.0 for joint_name in self.joint_names}
         self._timeseries_rows: list[dict[str, float]] = []
 
     def _compute_ee_position_error(
@@ -51,9 +52,12 @@ class DeployMetricAccumulator:
         from so101_hackathon.sim.kinematics import compute_so101_ee_position
 
         leader_tensor = torch.tensor([leader_joint_pos], dtype=torch.float32)
-        follower_tensor = torch.tensor([follower_joint_pos], dtype=torch.float32)
-        leader_ee = compute_so101_ee_position(leader_tensor, joint_names=self.joint_names)
-        follower_ee = compute_so101_ee_position(follower_tensor, joint_names=self.joint_names)
+        follower_tensor = torch.tensor(
+            [follower_joint_pos], dtype=torch.float32)
+        leader_ee = compute_so101_ee_position(
+            leader_tensor, joint_names=self.joint_names)
+        follower_ee = compute_so101_ee_position(
+            follower_tensor, joint_names=self.joint_names)
         return float(torch.linalg.norm(leader_ee[0] - follower_ee[0]).item())
 
     def update(
@@ -68,9 +72,11 @@ class DeployMetricAccumulator:
         leader = _as_list(leader_joint_pos)
         follower = _as_list(follower_joint_pos)
         commanded = _as_list(commanded_joint_pos)
-        joint_error = [float(leader_value) - float(follower_value) for leader_value, follower_value in zip(leader, follower)]
+        joint_error = [float(leader_value) - float(follower_value)
+                       for leader_value, follower_value in zip(leader, follower)]
         abs_error = [abs(value) for value in joint_error]
-        joint_rmse = math.sqrt(sum(value * value for value in joint_error) / len(self.joint_names))
+        joint_rmse = math.sqrt(
+            sum(value * value for value in joint_error) / len(self.joint_names))
         max_joint_error = max(abs_error)
         ee_position_error = self._compute_ee_position_error(leader, follower)
         if self.prev_commanded_joint_pos is None:
@@ -104,7 +110,8 @@ class DeployMetricAccumulator:
             joint_abs_error = abs_error[index]
             self.sum_abs[joint_name] += joint_abs_error
             self.sum_sq[joint_name] += joint_error[index] * joint_error[index]
-            self.max_abs[joint_name] = max(self.max_abs[joint_name], joint_abs_error)
+            self.max_abs[joint_name] = max(
+                self.max_abs[joint_name], joint_abs_error)
             self.last_abs_err[joint_name] = joint_abs_error
             row[f"leader_{joint_name}"] = float(leader[index])
             row[f"follower_{joint_name}"] = float(follower[index])

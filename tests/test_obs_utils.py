@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from so101_hackathon.utils.obs_utils import (
+from so101_hackathon.utils.rl_utils import (
     TELEOP_HISTORY_LENGTH,
     TELEOP_JOINT_NAMES,
     TELEOP_TERM_ORDER,
@@ -21,11 +21,13 @@ class ObservationParsingTests(unittest.TestCase):
         self.assertEqual(parsed["joint_names"], TELEOP_JOINT_NAMES)
         self.assertEqual(parsed["joint_dim"], joint_dim)
         self.assertEqual(parsed["history_length"], TELEOP_HISTORY_LENGTH)
-        self.assertEqual(parsed["leader_joint_pos"], observation[term_size - joint_dim : term_size])
+        self.assertEqual(parsed["leader_joint_pos"],
+                         observation[term_size - joint_dim: term_size])
         error_vel_start = 3 * term_size
         self.assertEqual(
             parsed["joint_error_vel"],
-            observation[error_vel_start + term_size - joint_dim : error_vel_start + term_size],
+            observation[error_vel_start + term_size -
+                        joint_dim: error_vel_start + term_size],
         )
 
     def test_parse_batched_observation_preserves_batch_dimension(self):
@@ -46,7 +48,8 @@ class ObservationParsingTests(unittest.TestCase):
 
         parsed = parse_teleop_observation({"policy": observation})
 
-        self.assertEqual(parsed["leader_joint_pos"], observation[term_size - joint_dim : term_size])
+        self.assertEqual(parsed["leader_joint_pos"],
+                         observation[term_size - joint_dim: term_size])
 
     def test_parse_rejects_wrong_observation_size(self):
         with self.assertRaises(ValueError):

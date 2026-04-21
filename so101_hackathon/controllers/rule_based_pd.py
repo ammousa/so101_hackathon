@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from so101_hackathon.controllers.base import BaseController
-from so101_hackathon.utils.action_utils import clamp_action
-from so101_hackathon.utils.obs_utils import parse_teleop_observation
+from so101_hackathon.utils.rl_utils import clamp_action, parse_teleop_observation
 
 
 @dataclass
@@ -20,6 +19,8 @@ class TeleopPDController(BaseController):
 
     The generic controller interface returns absolute joint targets, so the PD
     baseline computes a bounded correction around the current follower state.
+    The gripper is passed through from the leader directly to avoid hardware
+    calibration mismatch turning into a persistent gripper error fight.
     """
 
     kp: float = 1.0
@@ -37,7 +38,9 @@ class TeleopPDController(BaseController):
                 self.kp * joint_error + self.kd * joint_error_vel,
                 limit=self.max_action,
             )
-            return follower_joint_pos + correction
+            action = follower_joint_pos + correction
+            action[..., -1] = leader_joint_pos[..., -1]
+            return action
 
         follower_joint_pos = [
             float(leader) - float(err)
@@ -48,10 +51,12 @@ class TeleopPDController(BaseController):
              for err, err_vel in zip(joint_error, joint_error_vel)],
             limit=self.max_action,
         )
-        return [
+        action = [
             float(follower) + float(delta)
             for follower, delta in zip(follower_joint_pos, correction)
         ]
+        action[-1] = float(leader_joint_pos[-1])
+        return action
 
     def reset(self) -> None:
         """The PD baseline is stateless across episodes."""

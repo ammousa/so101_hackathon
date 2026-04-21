@@ -11,10 +11,16 @@ import os
 from pathlib import Path
 import random
 from typing import Any, Iterable
-import xml.etree.ElementTree as ET
 
+from so101_hackathon.sim.robots.so101_follower_spec import (
+    SO101_FOLLOWER_MOTOR_LIMITS,
+    follower_joint_limit_vectors_rad,
+    follower_joint_limits_rad_map,
+    joint_radians_to_motor_value,
+    motor_value_to_joint_radians,
+)
 from so101_hackathon.utils.eval_utils import checkpoint_run_dir
-from so101_hackathon.utils.obs_utils import TELEOP_JOINT_NAMES
+from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 
 DEFAULT_FPS = 60
 DEFAULT_TELEOP_TIME_S = None
@@ -32,10 +38,6 @@ _GRIPPER_JOINT_NAME = "gripper"
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def so101_urdf_path() -> Path:
-    return repo_root() / "so101_hackathon" / "sim" / "robots" / "trs_so101" / "urdf" / "so_arm101.urdf"
 
 
 def joint_field_name(joint_name: str) -> str:
@@ -58,7 +60,8 @@ def _gripper_percent_to_radians(value_percent: float) -> float:
 def _gripper_radians_to_percent(value_rad: float) -> float:
     lower, upper = _gripper_joint_limits_rad()
     if upper <= lower:
-        raise ValueError(f"Invalid gripper joint limits: lower={lower}, upper={upper}")
+        raise ValueError(
+            f"Invalid gripper joint limits: lower={lower}, upper={upper}")
     bounded_value = min(upper, max(lower, float(value_rad)))
     alpha = (bounded_value - lower) / (upper - lower)
     return 100.0 * alpha
@@ -67,16 +70,19 @@ def _gripper_radians_to_percent(value_rad: float) -> float:
 def _coerce_vector(values: Any, *, joint_dim: int = len(TELEOP_JOINT_NAMES)) -> list[float]:
     if isinstance(values, list):
         if len(values) != joint_dim:
-            raise ValueError(f"Expected {joint_dim} values, received {len(values)}")
+            raise ValueError(
+                f"Expected {joint_dim} values, received {len(values)}")
         return [float(value) for value in values]
     if hasattr(values, "detach") and hasattr(values, "cpu") and hasattr(values, "tolist"):
         data = values.detach().cpu().tolist()
         if isinstance(data, list) and data and isinstance(data[0], list):
             if len(data) != 1:
-                raise ValueError(f"Expected a single action vector, received batch shape {len(data)}")
+                raise ValueError(
+                    f"Expected a single action vector, received batch shape {len(data)}")
             data = data[0]
         if len(data) != joint_dim:
-            raise ValueError(f"Expected {joint_dim} values, received {len(data)}")
+            raise ValueError(
+                f"Expected {joint_dim} values, received {len(data)}")
         return [float(value) for value in data]
     data = list(values)
     if len(data) != joint_dim:
@@ -100,17 +106,15 @@ def hardware_obs_to_joint_positions(
 ) -> list[float]:
     allowed_missing = set(allowed_missing_joint_names)
     fallback_joint_positions = (
-        _coerce_vector(fallback_joint_positions_rad) if fallback_joint_positions_rad is not None else None
+        _coerce_vector(
+            fallback_joint_positions_rad) if fallback_joint_positions_rad is not None else None
     )
     values: list[float] = []
     for index, joint_name in enumerate(TELEOP_JOINT_NAMES):
         field_name = joint_field_name(joint_name)
         if field_name in observation:
             raw_value = float(observation[field_name])
-            if joint_name == _GRIPPER_JOINT_NAME:
-                values.append(_gripper_percent_to_radians(raw_value))
-            else:
-                values.append(math.radians(raw_value))
+            values.append(motor_value_to_joint_radians(joint_name, raw_value))
             continue
         if joint_name in allowed_missing and fallback_joint_positions is not None:
             values.append(float(fallback_joint_positions[index]))
@@ -125,16 +129,15 @@ def build_follower_action(
     active_joint_names: Iterable[str] | None = None,
 ) -> dict[str, float]:
     joint_positions = _coerce_vector(joint_positions_rad)
-    active_joint_name_set = set(active_joint_names) if active_joint_names is not None else set(TELEOP_JOINT_NAMES)
+    active_joint_name_set = set(
+        active_joint_names) if active_joint_names is not None else set(TELEOP_JOINT_NAMES)
     action: dict[str, float] = {}
     for index, joint_name in enumerate(TELEOP_JOINT_NAMES):
         if joint_name not in active_joint_name_set:
             continue
         value_rad = float(joint_positions[index])
-        if joint_name == _GRIPPER_JOINT_NAME:
-            action[joint_field_name(joint_name)] = _gripper_radians_to_percent(value_rad)
-        else:
-            action[joint_field_name(joint_name)] = math.degrees(value_rad)
+        action[joint_field_name(joint_name)] = joint_radians_to_motor_value(
+            joint_name, value_rad)
     return action
 
 
@@ -148,11 +151,13 @@ def blend_with_leader(
     coeff: float,
 ) -> list[float]:
     if coeff < 0.0 or coeff > 1.0:
-        raise ValueError(f"controller coefficient must be within [0, 1], received {coeff}")
+        raise ValueError(
+            f"controller coefficient must be within [0, 1], received {coeff}")
     leader = _coerce_vector(leader_joint_pos)
     controller = _coerce_vector(controller_joint_pos)
     return [
-        float(leader_value) + float(coeff) * (float(controller_value) - float(leader_value))
+        float(leader_value) + float(coeff) *
+        (float(controller_value) - float(leader_value))
         for leader_value, controller_value in zip(leader, controller)
     ]
 
@@ -181,9 +186,11 @@ class FixedDisturbanceChannel:
 
     def __post_init__(self) -> None:
         if self.delay_steps < 0:
-            raise ValueError(f"delay_steps must be >= 0, received {self.delay_steps}")
+            raise ValueError(
+                f"delay_steps must be >= 0, received {self.delay_steps}")
         if self.noise_std < 0.0:
-            raise ValueError(f"noise_std must be >= 0.0, received {self.noise_std}")
+            raise ValueError(
+                f"noise_std must be >= 0.0, received {self.noise_std}")
         self._buffer: list[list[float]] = []
         self._rng = random.Random(self.seed)
 
@@ -207,26 +214,12 @@ class FixedDisturbanceChannel:
 
 
 def parse_joint_limits_from_urdf(urdf_path: str | Path | None = None) -> dict[str, tuple[float, float]]:
-    resolved_path = Path(urdf_path) if urdf_path is not None else so101_urdf_path()
-    root = ET.fromstring(resolved_path.read_text(encoding="utf-8"))
-    limits: dict[str, tuple[float, float]] = {}
-    for joint in root.findall("joint"):
-        limit = joint.find("limit")
-        if limit is None:
-            continue
-        lower = limit.get("lower")
-        upper = limit.get("upper")
-        if lower is None or upper is None or joint.get("name") is None:
-            continue
-        limits[str(joint.get("name"))] = (float(lower), float(upper))
-    return limits
+    del urdf_path
+    return follower_joint_limits_rad_map()
 
 
 def get_joint_limit_vectors() -> tuple[list[float], list[float]]:
-    joint_limits = parse_joint_limits_from_urdf()
-    lower = [float(joint_limits[joint_name][0]) for joint_name in TELEOP_JOINT_NAMES]
-    upper = [float(joint_limits[joint_name][1]) for joint_name in TELEOP_JOINT_NAMES]
-    return lower, upper
+    return follower_joint_limit_vectors_rad(TELEOP_JOINT_NAMES)
 
 
 @dataclass
@@ -374,7 +367,9 @@ def write_deploy_artifacts(
         "timeseries": str(output_dir / "timeseries.csv"),
     }
     write_json(artifact_paths["config"], config_payload)
-    summary_payload = metrics.summary_payload() if hasattr(metrics, "summary_payload") else metrics.summary()
+    summary_payload = metrics.summary_payload() if hasattr(
+        metrics, "summary_payload") else metrics.summary()
     write_json(artifact_paths["summary"], summary_payload)
-    write_timeseries_csv(artifact_paths["timeseries"], metrics.timeseries_rows())
+    write_timeseries_csv(
+        artifact_paths["timeseries"], metrics.timeseries_rows())
     return artifact_paths
