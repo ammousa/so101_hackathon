@@ -18,6 +18,7 @@ setup(
     },
     install_requires=[
         "PyYAML>=6.0",
+        "rsl-rl-lib==5.0.1",
         "tqdm>=4.66",
     ],
     python_requires=">=3.11",

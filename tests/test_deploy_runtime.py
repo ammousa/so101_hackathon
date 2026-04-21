@@ -4,6 +4,7 @@ import math
 import unittest
 
 from so101_hackathon.deploy.runtime import (
+    DEFAULT_NOISE_JOINT_INDICES,
     FixedDisturbanceChannel,
     LiveTeleopObservationBuilder,
     blend_with_leader,
@@ -188,16 +189,26 @@ class DeployRuntimeTests(unittest.TestCase):
         channel = FixedDisturbanceChannel(delay_steps=2, noise_std=0.0, seed=0)
 
         outputs = [
-            channel.apply([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            channel.apply([2.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            channel.apply([3.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            channel.apply([4.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            channel.apply([1.0, 0.0, 0.0, 0.0, 5.0, 6.0]),
+            channel.apply([2.0, 0.0, 0.0, 0.0, 7.0, 8.0]),
+            channel.apply([3.0, 0.0, 0.0, 0.0, 9.0, 10.0]),
+            channel.apply([4.0, 0.0, 0.0, 0.0, 11.0, 12.0]),
         ]
 
-        self.assertEqual(outputs[0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.assertEqual(outputs[1], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.assertEqual(outputs[2], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.assertEqual(outputs[3], [2.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.assertEqual(outputs[0], [1.0, 0.0, 0.0, 0.0, 5.0, 6.0])
+        self.assertEqual(outputs[1], [1.0, 0.0, 0.0, 0.0, 5.0, 6.0])
+        self.assertEqual(outputs[2], [1.0, 0.0, 0.0, 0.0, 5.0, 6.0])
+        self.assertEqual(outputs[3], [2.0, 0.0, 0.0, 0.0, 7.0, 8.0])
+
+    def test_disturbance_channel_noise_only_affects_first_four_joints(self):
+        self.assertEqual(DEFAULT_NOISE_JOINT_INDICES, (0, 1, 2, 3))
+        channel = FixedDisturbanceChannel(
+            delay_steps=0, noise_std=0.05, seed=7)
+
+        output = channel.apply([0.0, 0.0, 0.0, 0.0, 5.0, 6.0])
+
+        self.assertNotEqual(output[:4], [0.0, 0.0, 0.0, 0.0])
+        self.assertEqual(output[4:], [5.0, 6.0])
 
     def test_disturbance_channel_noise_is_seeded_and_resettable(self):
         channel = FixedDisturbanceChannel(
@@ -206,6 +217,8 @@ class DeployRuntimeTests(unittest.TestCase):
         first = channel.apply([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         second = channel.apply([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         self.assertNotEqual(first, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.assertEqual(first[4:], [0.0, 0.0])
+        self.assertEqual(second[4:], [0.0, 0.0])
         self.assertNotEqual(first, second)
 
         channel.reset()

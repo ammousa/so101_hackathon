@@ -1,6 +1,16 @@
 """Deploy any registered SO101 teleop controller on real hardware."""
 
 from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 from so101_hackathon.utils.eval_utils import load_yaml
 from so101_hackathon.rl_training.runtime_utils import normalize_device_for_runtime
@@ -27,15 +37,6 @@ from so101_hackathon.deploy.hardware import (
     create_leader_follower_pair,
     load_leader_follower_hardware_dependencies,
 )
-
-import argparse
-import os
-from pathlib import Path
-import sys
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--noise-std",
         type=float,
         default=DEFAULT_NOISE_STD,
-        help="Gaussian command noise standard deviation in radians.",
+        help="Gaussian command noise standard deviation in radians for joints 1-4 only.",
     )
     parser.add_argument(
         "--device",

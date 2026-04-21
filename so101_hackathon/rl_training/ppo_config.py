@@ -58,18 +58,25 @@ class TeleopPpoRunnerCfg:
             "max_iterations": self.max_iterations,
             "empirical_normalization": self.empirical_normalization,
             "obs_groups": {
-                "policy": ["policy"],
+                "actor": ["policy"],
                 "critic": ["policy"],
             },
-            "policy": {
-                "class_name": "ActorCritic",
-                "init_noise_std": 1.0,
-                "noise_std_type": "scalar",
-                "actor_obs_normalization": self.empirical_normalization,
-                "critic_obs_normalization": self.empirical_normalization,
-                "actor_hidden_dims": list(self.actor_hidden_dims),
-                "critic_hidden_dims": list(self.critic_hidden_dims),
+            "actor": {
+                "class_name": "MLPModel",
+                "hidden_dims": list(self.actor_hidden_dims),
                 "activation": "elu",
+                "obs_normalization": self.empirical_normalization,
+                "distribution_cfg": {
+                    "class_name": "GaussianDistribution",
+                    "init_std": 1.0,
+                    "std_type": "scalar",
+                },
+            },
+            "critic": {
+                "class_name": "MLPModel",
+                "hidden_dims": list(self.critic_hidden_dims),
+                "activation": "elu",
+                "obs_normalization": self.empirical_normalization,
             },
             "algorithm": {
                 "class_name": "PPO",

@@ -1,17 +1,6 @@
 """Teleoperate the internal PickOrange task with an SO101 leader arm."""
 
 from __future__ import annotations
-from so101_hackathon.utils.eval_utils import add_app_launcher_args
-from so101_hackathon.envs.env_runtime import dynamic_reset_gripper_effort_limit_sim
-from so101_hackathon.sim.robots.so101_follower_spec import SO101_FOLLOWER_MOTOR_LIMITS
-from so101_hackathon.deploy.runtime import (
-    DEFAULT_DELAY_STEPS,
-    DEFAULT_LEADER_ID,
-    DEFAULT_LEADER_PORT,
-    DEFAULT_NOISE_STD,
-    FixedDisturbanceChannel,
-)
-from so101_hackathon.deploy.hardware import DEFAULT_CALIBRATION_DIR, load_leader_follower_hardware_dependencies
 
 import argparse
 import copy
@@ -21,14 +10,29 @@ from pathlib import Path
 import signal
 import sys
 import time
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from so101_hackathon.utils.eval_utils import add_app_launcher_args, load_yaml
+from so101_hackathon.envs.env_runtime import dynamic_reset_gripper_effort_limit_sim
+from so101_hackathon.sim.robots.so101_follower_spec import SO101_FOLLOWER_MOTOR_LIMITS
+from so101_hackathon.deploy.runtime import (
+    DEFAULT_DELAY_STEPS,
+    DEFAULT_LEADER_ID,
+    DEFAULT_LEADER_PORT,
+    DEFAULT_NOISE_STD,
+    FixedDisturbanceChannel,
+)
+from so101_hackathon.registry import create_controller, list_controller_names
+from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES, clamp_action
+
 _FRONT_VIEWPORT_WINDOW = "Front"
 _TOP_VIEWPORT_WINDOW = "Top"
 _WRIST_VIEWPORT_WINDOW = "Wrist"
+DEFAULT_CALIBRATION_DIR = Path.home() / ".cache" / "huggingface" / "lerobot" / "calibration"
 
 
 def _discover_vendor_module_root() -> Path:
@@ -53,6 +57,30 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["so101leader"],
         help="Teleoperation device to use.",
     )
+    parser.add_argument(
+        "--controller",
+        choices=list_controller_names(),
+        default="raw",
+        help="Registered controller to run between the leader target and PickOrange action.",
+    )
+    parser.add_argument(
+        "--controller-config",
+        type=str,
+        default=None,
+        help="Optional YAML file with controller-specific overrides.",
+    )
+    parser.add_argument(
+        "--checkpoint-path",
+        type=str,
+        default=None,
+        help="Optional checkpoint path forwarded into controller config.",
+    )
+    parser.add_argument(
+        "--controller-coeff",
+        type=float,
+        default=1.0,
+        help="Blend between direct leader teleop and controller output.",
+    )
     parser.add_argument("--port", type=str, default=DEFAULT_LEADER_PORT,
                         help="Serial port for the SO101 leader.")
     parser.add_argument("--num_envs", type=int, default=1,
@@ -73,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="noise_std",
         type=float,
         default=DEFAULT_NOISE_STD,
-        help="Gaussian joint-space noise standard deviation in radians applied to the follower command.",
+        help="Gaussian joint-space noise standard deviation in radians applied to joints 1-4 only.",
     )
     parser.add_argument("--recalibrate", action="store_true",
                         help="Delete the cached leader calibration file first.")
@@ -102,6 +130,17 @@ def build_pick_orange_env_cfg(args: argparse.Namespace):
     )
 
 
+def build_controller_config(args: argparse.Namespace, *, seed: int | None = None) -> dict[str, Any]:
+    controller_config = load_yaml(args.controller_config)
+    controller_config.setdefault("device", args.device)
+    controller_config.setdefault(
+        "seed", int(seed if seed is not None else (args.seed if args.seed is not None else 42))
+    )
+    if args.checkpoint_path is not None:
+        controller_config["checkpoint_path"] = args.checkpoint_path
+    return controller_config
+
+
 @dataclass
 class RateLimiter:
     hz: int
@@ -127,17 +166,27 @@ class KeyboardTeleopState:
         import omni
 
         self._carb = carb
+        self._input = None
+        self._keyboard = None
+        self._keyboard_sub = None
         self._appwindow = omni.appwindow.get_default_app_window()
+        self.started = False
+        self._reset_requested = False
+        self._success_requested = False
+        if self._appwindow is None:
+            self.started = True
+            print(
+                "[WARN] Isaac app window is unavailable; starting teleoperation immediately "
+                "without keyboard reset/success hotkeys."
+            )
+            return
         self._input = carb.input.acquire_input_interface()
         self._keyboard = self._appwindow.get_keyboard()
         self._keyboard_sub = self._input.subscribe_to_keyboard_events(
             self._keyboard, self._on_keyboard_event)
-        self.started = False
-        self._reset_requested = False
-        self._success_requested = False
 
     def close(self) -> None:
-        if getattr(self, "_keyboard_sub", None) is not None:
+        if getattr(self, "_keyboard_sub", None) is not None and self._input is not None:
             self._input.unsubscribe_to_keyboard_events(
                 self._keyboard, self._keyboard_sub)
             self._keyboard_sub = None
@@ -182,6 +231,8 @@ class SO101LeaderTeleop:
 
         self._leader_api = "lerobot"
         try:
+            from so101_hackathon.deploy.hardware import load_leader_follower_hardware_dependencies
+
             SOLeader, SOLeaderConfig, _, _, _ = load_leader_follower_hardware_dependencies()
         except ModuleNotFoundError as exc:
             if exc.name != "lerobot":
@@ -269,6 +320,174 @@ class SO101LeaderTeleop:
             "motor_limits": SO101_FOLLOWER_MOTOR_LIMITS,
         }
         return self._env.cfg.preprocess_device_action(action)
+
+
+def _is_tensor(values: Any) -> bool:
+    return hasattr(values, "shape") and hasattr(values, "device") and hasattr(values, "dtype")
+
+
+def _clone_action(values: Any) -> Any:
+    if _is_tensor(values):
+        return values.clone()
+    if isinstance(values, list):
+        return [float(value) for value in values]
+    return [float(value) for value in list(values)]
+
+
+def _zeros_like_action(values: Any) -> Any:
+    if _is_tensor(values):
+        return values.new_zeros(values.shape)
+    return [0.0 for _ in values]
+
+
+def _as_action_like(values: Any, reference: Any) -> Any:
+    if _is_tensor(reference):
+        if _is_tensor(values):
+            action = values.to(device=reference.device, dtype=reference.dtype)
+        else:
+            action = reference.new_tensor(values)
+        if action.ndim == 1 and reference.ndim == 2:
+            action = action.unsqueeze(0).expand_as(reference)
+        return action
+    if _is_tensor(values):
+        values = values.detach().cpu().tolist()
+    if isinstance(values, list) and values and isinstance(values[0], list):
+        if len(values) != 1:
+            raise ValueError(
+                f"Expected a single action vector, received batch shape {len(values)}")
+        values = values[0]
+    return [float(value) for value in values]
+
+
+def adapt_controller_action(
+    *,
+    leader_action: Any,
+    controller_action: Any,
+    controller: Any,
+    controller_coeff: float,
+) -> Any:
+    coeff = float(controller_coeff)
+    if coeff < 0.0 or coeff > 1.0:
+        raise ValueError(
+            f"controller_coeff must be within [0, 1], received {coeff}")
+
+    if getattr(controller, "action_mode", "absolute") == "residual":
+        residual_action = _as_action_like(
+            clamp_action(controller_action, limit=1.0), leader_action)
+        if not _is_tensor(leader_action):
+            return [
+                float(leader_value) + coeff * float(residual_value)
+                for leader_value, residual_value in zip(leader_action, residual_action)
+            ]
+        return leader_action + coeff * residual_action
+
+    absolute_action = _as_action_like(controller_action, leader_action)
+    if not _is_tensor(leader_action):
+        return [
+            float(leader_value) + coeff *
+            (float(controller_value) - float(leader_value))
+            for leader_value, controller_value in zip(leader_action, absolute_action)
+        ]
+    return leader_action + coeff * (absolute_action - leader_action)
+
+
+def read_follower_joint_positions(env):
+    robot = env.scene["robot"]
+    joint_ids, _ = robot.find_joints(
+        list(TELEOP_JOINT_NAMES), preserve_order=True)
+    return robot.data.joint_pos[:, joint_ids]
+
+
+def clamp_sim_joint_positions(actions, env):
+    try:
+        robot = env.scene["robot"]
+        joint_ids, _ = robot.find_joints(
+            list(TELEOP_JOINT_NAMES), preserve_order=True)
+        lower_limits = robot.data.soft_joint_pos_limits[:, joint_ids, 0]
+        upper_limits = robot.data.soft_joint_pos_limits[:, joint_ids, 1]
+    except Exception:
+        return actions
+    return actions.clamp(min=lower_limits, max=upper_limits)
+
+
+class SimTeleopObservationBuilder:
+    def __init__(self) -> None:
+        self._previous_leader_joint_pos = None
+        self._previous_joint_error = None
+        self._previous_action = None
+
+    def reset(self) -> None:
+        self._previous_leader_joint_pos = None
+        self._previous_joint_error = None
+        self._previous_action = None
+
+    def set_previous_action(self, action) -> None:
+        self._previous_action = _clone_action(action)
+
+    def build(self, *, leader_joint_pos, follower_joint_pos, dt: float):
+        dt = max(float(dt), 1.0e-6)
+        if _is_tensor(leader_joint_pos):
+            joint_error = leader_joint_pos - follower_joint_pos
+        else:
+            follower_joint_pos = _as_action_like(
+                follower_joint_pos, leader_joint_pos)
+            joint_error = [
+                float(leader_value) - float(follower_value)
+                for leader_value, follower_value in zip(leader_joint_pos, follower_joint_pos)
+            ]
+        if self._previous_leader_joint_pos is None:
+            leader_joint_vel = _zeros_like_action(leader_joint_pos)
+            joint_error_vel = _zeros_like_action(joint_error)
+        elif _is_tensor(leader_joint_pos):
+            previous_leader = _as_action_like(
+                self._previous_leader_joint_pos, leader_joint_pos)
+            previous_error = _as_action_like(
+                self._previous_joint_error, joint_error)
+            leader_joint_vel = ((leader_joint_pos - previous_leader) / dt).clamp(max=100)
+            joint_error_vel = (joint_error - previous_error) / dt
+        else:
+            previous_leader = _as_action_like(
+                self._previous_leader_joint_pos, leader_joint_pos)
+            previous_error = _as_action_like(
+                self._previous_joint_error, joint_error)
+            leader_joint_vel = [
+                min((float(current) - float(previous)) / dt, 100.0)
+                for current, previous in zip(leader_joint_pos, previous_leader)
+            ]
+            joint_error_vel = [
+                (float(current) - float(previous)) / dt
+                for current, previous in zip(joint_error, previous_error)
+            ]
+
+        previous_action = (
+            _zeros_like_action(leader_joint_pos)
+            if self._previous_action is None
+            else _as_action_like(self._previous_action, leader_joint_pos)
+        )
+
+        self._previous_leader_joint_pos = _clone_action(leader_joint_pos)
+        self._previous_joint_error = _clone_action(joint_error)
+
+        if _is_tensor(leader_joint_pos):
+            import torch
+
+            return torch.cat(
+                [
+                    leader_joint_pos,
+                    leader_joint_vel,
+                    joint_error,
+                    joint_error_vel,
+                    previous_action,
+                ],
+                dim=-1,
+            )
+        return (
+            list(leader_joint_pos)
+            + list(leader_joint_vel)
+            + list(joint_error)
+            + list(joint_error_vel)
+            + list(previous_action)
+        )
 
 
 def apply_action_disturbance(actions, channel: FixedDisturbanceChannel):
@@ -380,6 +599,10 @@ def main(argv: list[str] | None = None) -> int:
         env_cfg=env_cfg,
         render_mode="rgb_array" if getattr(args, "enable_cameras", False) else None,
     ).unwrapped
+    controller_config = build_controller_config(args, seed=env_cfg.seed)
+    controller = create_controller(
+        args.controller, env=None, config=controller_config)
+    observation_builder = SimTeleopObservationBuilder()
     original_success_cfg = None
     if hasattr(env, "termination_manager") and "success" in getattr(env.termination_manager, "active_terms", []):
         original_success_cfg = copy.deepcopy(
@@ -399,6 +622,8 @@ def main(argv: list[str] | None = None) -> int:
         env.initialize()
     env.reset()
     teleop.reset()
+    controller.reset()
+    observation_builder.reset()
     disturbance_channel.reset()
     if not getattr(args, "headless", False):
         viewport_layout = ViewportLayoutManager()
@@ -419,6 +644,8 @@ def main(argv: list[str] | None = None) -> int:
                 print("Task Success!!!")
                 manual_terminate(env, True)
                 env.reset()
+                controller.reset()
+                observation_builder.reset()
                 disturbance_channel.reset()
                 if original_success_cfg is not None:
                     env.termination_manager.set_term_cfg(
@@ -427,6 +654,8 @@ def main(argv: list[str] | None = None) -> int:
             if teleop.pop_reset_requested():
                 manual_terminate(env, False)
                 env.reset()
+                controller.reset()
+                observation_builder.reset()
                 disturbance_channel.reset()
                 if original_success_cfg is not None:
                     env.termination_manager.set_term_cfg(
@@ -436,12 +665,27 @@ def main(argv: list[str] | None = None) -> int:
             if env.cfg.dynamic_reset_gripper_effort_limit:
                 dynamic_reset_gripper_effort_limit_sim(env, args.teleop_device)
 
-            actions = teleop.advance()
-            if actions is None:
+            leader_actions = teleop.advance()
+            if leader_actions is None:
                 env.render()
             else:
-                env.step(apply_action_disturbance(
-                    actions, disturbance_channel))
+                follower_joint_pos = read_follower_joint_positions(env)
+                controller_obs = observation_builder.build(
+                    leader_joint_pos=leader_actions,
+                    follower_joint_pos=follower_joint_pos,
+                    dt=1.0 / max(int(args.step_hz), 1),
+                )
+                controller_actions = controller.act(controller_obs)
+                actions = adapt_controller_action(
+                    leader_action=leader_actions,
+                    controller_action=controller_actions,
+                    controller=controller,
+                    controller_coeff=float(args.controller_coeff),
+                )
+                actions = clamp_sim_joint_positions(
+                    apply_action_disturbance(actions, disturbance_channel), env)
+                env.step(actions)
+                observation_builder.set_previous_action(actions)
             rate_limiter.sleep(env)
     finally:
         signal.signal(signal.SIGINT, original_sigint_handler)

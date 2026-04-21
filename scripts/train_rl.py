@@ -1,9 +1,6 @@
 """Train the single PPO baseline for the hackathon repo."""
 
 from __future__ import annotations
-from so101_hackathon.utils.rl_utils import build_training_log_dir
-from so101_hackathon.rl_training.runtime_utils import normalize_device_for_runtime
-from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
 
 import argparse
 import os
@@ -14,6 +11,10 @@ import traceback
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from so101_hackathon.utils.rl_utils import build_training_log_dir
+from so101_hackathon.rl_training.runtime_utils import normalize_device_for_runtime
+from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--noise-std",
         type=float,
         default=None,
-        help="Override the fixed action noise standard deviation used by the teleop disturbance model.",
+        help="Override the fixed action noise standard deviation used by the teleop disturbance model for joints 1-4 only.",
     )
     parser.add_argument(
         "--experiment-name",

@@ -1,6 +1,19 @@
 """Unified evaluation entrypoint."""
 
 from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from so101_hackathon.utils.eval_utils import (
     add_app_launcher_args,
     build_evaluation_payload,
@@ -16,18 +29,6 @@ from so101_hackathon.rl_training.runtime_utils import (
     normalize_device_for_runtime,
 )
 from so101_hackathon.registry import create_controller, list_controller_names
-
-import argparse
-import json
-import os
-from pathlib import Path
-import sys
-import traceback
-from typing import Any
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,14 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--kp",
         type=float,
-        default=None,
-        help="Override the PD proportional gain for evaluation.",
+        default=1.0,
+        help="Override the PD proportional gain for evaluation. Defaults to 1.0 for a pure proportional controller.",
     )
     parser.add_argument(
         "--kd",
         type=float,
-        default=None,
-        help="Override the PD derivative gain for evaluation.",
+        default=0.0,
+        help="Override the PD derivative gain for evaluation. Defaults to 0 for a pure proportional controller.",
     )
     parser.add_argument(
         "--env-config",
@@ -124,14 +125,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delay-steps",
         type=int,
-        default=None,
+        default=0,
         help="Override the fixed action delay used by the teleop disturbance model.",
     )
     parser.add_argument(
         "--noise-std",
         type=float,
-        default=None,
-        help="Override the fixed action noise standard deviation used by the teleop disturbance model.",
+        default=0,
+        help="Override the fixed action noise standard deviation used by the teleop disturbance model for joints 1-4 only.",
     )
     parser.add_argument(
         "--checkpoint-path",

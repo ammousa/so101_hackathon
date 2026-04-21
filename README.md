@@ -34,11 +34,15 @@ pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorc
 
 **Isaac Sim 5.1.0** (this will take several minutes):
 ```bash
+sudo apt install cmake build-essential libglu1-mesa
 pip install "isaacsim[all,extscache]==5.1.0" --extra-index-url https://pypi.nvidia.com
 ```
 
+> 💡 **Verify Isaac Sim**: Run `isaacsim --headless` once to let it download additional assets. You can exit after the app is loaded successfully.
+
 **Isaac Lab 2.3.0**:
 ```bash
+cd path/to/so101_hackathon/ # You need to be inside the repo folder 
 mkdir -p external
 cd external
 git clone https://github.com/isaac-sim/IsaacLab.git
@@ -53,9 +57,7 @@ cd ../..   # or replace with your actual '/path/to/so101_hackathon'
 pip install -e .
 ```
 
-The repo also requires `PyYAML` and `tqdm` – they are installed automatically by `pip install -e .`.
-
-> 💡 **Verify Isaac Sim**: Run `isaacsim --headless` once to let it download additional assets. You can exit after the app is loaded successfully.
+The repo also requires `PyYAML`, `tqdm`, and `rsl-rl-lib==5.0.1` - they are installed automatically by `pip install -e .`.
 
 ---
 
@@ -77,7 +79,7 @@ Run any controller in simulation and see how well the follower tracks a leader t
 
 ```bash
 # Run the raw (passthrough) controller for 3 episodes, headless, with video
-python scripts/evaluate.py --controller raw --headless --num-episodes 3 --video
+python scripts/evaluate.py --controller raw --headless --video
 ```
 
 - `--headless` : no 3D viewer (faster for batch runs)
@@ -148,12 +150,13 @@ python scripts/deploy/calibrate_hardware.py \
   --id my_follower_arm
 ```
 
-#### Deploy a controller on the real robot (simulated environment for now)
+#### Deploy a controller in the PickOrange sim task
 
-The internal `PickOrange` teleop environment allows you to test deployment logic in simulation before moving to hardware.
+The internal `PickOrange` teleop environment allows you to test deployment logic in simulation before moving to hardware. It reads the SO101 leader arm, builds the flat controller observation used by the deployable controllers, and sends the adapted command to the simulated follower.
 
 ```bash
 python scripts/deploy/sim_pick_orange/teleop.py \
+  --controller raw \
   --teleop_device so101leader \
   --port /dev/ttyACM1 \
   --num_envs 1 \
@@ -161,12 +164,30 @@ python scripts/deploy/sim_pick_orange/teleop.py \
   --enable_cameras
 ```
 
+PickOrange teleop arguments:
+
+- `--controller`: registered controller name. Built-ins are `raw`, `pd`, and `ppo`; default is `raw`.
+- `--controller-config`: optional YAML file with controller-specific settings.
+- `--checkpoint-path`: checkpoint path forwarded to learned controllers such as `ppo`.
+- `--controller-coeff`: blend between direct leader teleop and controller output. `0.0` is pure leader teleop; `1.0` is full controller output.
+- `--teleop_device`: teleop device name. Only `so101leader` is currently supported.
+- `--port`: serial port for the SO101 leader arm.
+- `--num_envs`: number of parallel PickOrange environments. Interactive teleop normally uses `1`.
+- `--seed`: optional environment seed.
+- `--step_hz`: target simulation control frequency.
+- `--delay-steps`: fixed post-controller command delay in control steps.
+- `--noise-std`: Gaussian joint-space command noise standard deviation in radians for joints 1-4 only. Delay still applies to all joints.
+- `--recalibrate`: delete the cached leader calibration before connecting.
+- `--device`: Torch/Isaac device string, for example `cuda`, `cuda:0`, or `cpu`.
+- `--enable_cameras`: enable RGB camera rendering.
+- `--headless`: run without the viewer.
+
 Hotkeys inside the viewer:
 - `B` – begin teleoperation
 - `R` – reset environment
 - `N` – mark success and reset
 
-Once your controller is ready, you can adapt the same script to run on the real follower arm by changing the environment target. (Detailed hardware deployment instructions will be provided during the hackathon.)
+For real follower-arm deployment, use `scripts/deploy/deploy.py`.
 
 ---
 
@@ -197,6 +218,7 @@ Once your controller is ready, you can adapt the same script to run on the real 
 2. Implement `act(obs) -> action`  
 3. Register your controller in [`so101_hackathon/registry.py`](so101_hackathon/registry.py)  
 4. Run evaluation and inspect the outputs  
+5. Working, hmmm, let's beat the baseline 💪!
 
 **Built‑in baselines**:
 
@@ -236,17 +258,6 @@ Start with these links:
 | `so101_hackathon/sim/` | Robot config, kinematics, simulator logic |
 | `so101_hackathon/utils/` | General helpers |
 
----
-
-## 🏁 A Good First Loop
-
-```bash
-python scripts/list_controllers.py
-python scripts/evaluate.py --controller raw --headless --num-episodes 3 --video
-tensorboard --logdir logs/raw/evaluation
-```
-
-Then copy `raw.py`, register your controller name, and try to beat the baseline!
 
 ---
 

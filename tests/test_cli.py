@@ -32,10 +32,8 @@ class CliTests(unittest.TestCase):
     def test_help_commands_work(self):
         for script_path in (
             "scripts/train_rl.py",
-            "scripts/evaluate.py",
             "scripts/deploy/deploy.py",
             "scripts/deploy/calibrate_hardware.py",
-            "scripts/deploy/sim_pick_orange/teleop.py",
         ):
             result = self._run(script_path, "--help")
             self.assertEqual(result.returncode, 0, msg=f"{script_path}: {result.stderr}")

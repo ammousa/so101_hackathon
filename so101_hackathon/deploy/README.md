@@ -18,7 +18,7 @@ This package contains the real-hardware deployment helpers for the SO101 teleope
 
 ## How it fits together
 
-The public CLI lives in `scripts/deploy.py`.
+The public CLI lives in `scripts/deploy/deploy.py`.
 
 That script:
 
@@ -57,16 +57,6 @@ python scripts/calibrate_hardware.py \
   --id my_awesome_follower_arm
 ```
 
-Follower without gripper:
-
-```bash
-python scripts/calibrate_hardware.py \
-  --role follower \
-  --port /dev/ttyACM0 \
-  --id my_awesome_follower_arm \
-  --disable-gripper
-```
-
 Interactive calibration flow:
 
 1. Run the script for the arm you want to calibrate.
@@ -82,13 +72,13 @@ The deploy and teleop paths in this repo read from that directory.
 Deploy the built-in PD controller with the default hardware ports:
 
 ```bash
-python scripts/deploy.py --controller pd
+python scripts/deploy/deploy.py --controller pd
 ```
 
 Use custom serial ports and stop automatically after 30 seconds:
 
 ```bash
-python scripts/deploy.py \
+python scripts/deploy/deploy.py \
   --controller pd \
   --leader-port /dev/ttyACM1 \
   --follower-port /dev/ttyACM0 \
@@ -98,7 +88,7 @@ python scripts/deploy.py \
 Tune the PD gains from a YAML config:
 
 ```bash
-python scripts/deploy.py \
+python scripts/deploy/deploy.py \
   --controller pd \
   --controller-config path/to/pd.yaml
 ```
@@ -114,7 +104,7 @@ max_action: 0.5
 Reduce the controller influence while keeping partial direct leader teleop:
 
 ```bash
-python scripts/deploy.py \
+python scripts/deploy/deploy.py \
   --controller pd \
   --controller-coeff 0.5
 ```
@@ -141,7 +131,7 @@ python scripts/deploy.py \
 Deploy a trained PPO checkpoint:
 
 ```bash
-python scripts/deploy.py \
+python scripts/deploy/deploy.py \
   --controller ppo \
   --checkpoint-path /full/path/to/model_1500.pt \
   --device cuda:0

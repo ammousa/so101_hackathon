@@ -31,6 +31,7 @@ DEFAULT_LEADER_ID = "my_awesome_leader_arm"
 DEFAULT_PRINT_EVERY = 20
 DEFAULT_DELAY_STEPS = 0
 DEFAULT_NOISE_STD = 0.0
+DEFAULT_NOISE_JOINT_INDICES = (0, 1, 2, 3)
 
 _JOINT_KEY_SUFFIX = ".pos"
 _GRIPPER_JOINT_NAME = "gripper"
@@ -178,11 +179,12 @@ def clamp_joint_positions(
 
 @dataclass
 class FixedDisturbanceChannel:
-    """Apply fixed command delay and Gaussian noise in joint space."""
+    """Apply fixed command delay and masked Gaussian noise in joint space."""
 
     delay_steps: int = DEFAULT_DELAY_STEPS
     noise_std: float = DEFAULT_NOISE_STD
     seed: int = 0
+    noise_joint_indices: tuple[int, ...] = DEFAULT_NOISE_JOINT_INDICES
 
     def __post_init__(self) -> None:
         if self.delay_steps < 0:
@@ -191,6 +193,8 @@ class FixedDisturbanceChannel:
         if self.noise_std < 0.0:
             raise ValueError(
                 f"noise_std must be >= 0.0, received {self.noise_std}")
+        self.noise_joint_indices = tuple(int(index)
+                                         for index in self.noise_joint_indices)
         self._buffer: list[list[float]] = []
         self._rng = random.Random(self.seed)
 
@@ -207,10 +211,12 @@ class FixedDisturbanceChannel:
             delayed = list(self._buffer[-(self.delay_steps + 1)])
         if self.noise_std <= 0.0:
             return delayed
-        return [
-            float(value) + self._rng.gauss(0.0, self.noise_std)
-            for value in delayed
-        ]
+        disturbed = list(delayed)
+        for joint_index in self.noise_joint_indices:
+            if 0 <= joint_index < len(disturbed):
+                disturbed[joint_index] = float(
+                    disturbed[joint_index]) + self._rng.gauss(0.0, self.noise_std)
+        return disturbed
 
 
 def parse_joint_limits_from_urdf(urdf_path: str | Path | None = None) -> dict[str, tuple[float, float]]:

@@ -19,3 +19,5 @@ Training and evaluation both use the same environment, but these files define wh
 - what the follower observes
 - how actions are applied
 - what counts as success or failure
+
+The teleop disturbance model delays the full joint command, but Gaussian command noise is masked to joints 1-4 only. The wrist roll and gripper joints are not noised. The same mask is used for reset-time joint perturbations in simulation.

@@ -8,7 +8,7 @@ This directory contains the command-line entrypoints students actually run.
 - `train_rl.py`: train or resume the PPO baseline training
 - `list_controllers.py`: print the currently registered controllers
 - `calibrate_hardware.py`: interactively calibrate one real SO101 leader or follower arm
-- `tasks/pick_orange/teleop.py`: teleoperate the internal PickOrange kitchen env with an SO101 leader arm
+- `deploy/sim_pick_orange/teleop.py`: teleoperate the internal PickOrange kitchen env with an SO101 leader arm and a registered controller
 
 ## Typical flow
 

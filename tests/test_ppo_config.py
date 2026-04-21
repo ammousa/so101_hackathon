@@ -11,27 +11,37 @@ class TeleopPpoRunnerCfgTests(unittest.TestCase):
 
         runner_cfg = cfg.to_dict()
 
-        self.assertIn("policy", runner_cfg)
-        self.assertNotIn("actor", runner_cfg)
-        self.assertNotIn("critic", runner_cfg)
+        self.assertNotIn("policy", runner_cfg)
+        self.assertIn("actor", runner_cfg)
+        self.assertIn("critic", runner_cfg)
         self.assertEqual(
             runner_cfg["obs_groups"],
             {
-                "policy": ["policy"],
+                "actor": ["policy"],
                 "critic": ["policy"],
             },
         )
         self.assertEqual(
-            runner_cfg["policy"],
+            runner_cfg["actor"],
             {
-                "class_name": "ActorCritic",
-                "init_noise_std": 1.0,
-                "noise_std_type": "scalar",
-                "actor_obs_normalization": True,
-                "critic_obs_normalization": True,
-                "actor_hidden_dims": [256, 128, 64],
-                "critic_hidden_dims": [256, 128, 64],
+                "class_name": "MLPModel",
+                "hidden_dims": [256, 128, 64],
                 "activation": "elu",
+                "obs_normalization": True,
+                "distribution_cfg": {
+                    "class_name": "GaussianDistribution",
+                    "init_std": 1.0,
+                    "std_type": "scalar",
+                },
+            },
+        )
+        self.assertEqual(
+            runner_cfg["critic"],
+            {
+                "class_name": "MLPModel",
+                "hidden_dims": [256, 128, 64],
+                "activation": "elu",
+                "obs_normalization": True,
             },
         )
         self.assertEqual(runner_cfg["algorithm"]["class_name"], "PPO")

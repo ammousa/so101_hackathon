@@ -4,7 +4,35 @@ This directory holds task-specific entrypoints that sit beside the shared contro
 
 ## Current task scripts
 
-- `pick_orange/teleop.py`: launch and teleoperate the internal `PickOrange` task with an SO101 leader arm
+- `sim_pick_orange/teleop.py`: launch the internal `PickOrange` task, read an SO101 leader arm, and run a registered controller in the loop
+
+## PickOrange teleop arguments
+
+The PickOrange script now supports the same built-in controller names as the rest of the repo:
+
+```bash
+python scripts/deploy/sim_pick_orange/teleop.py \
+  --controller pd \
+  --port /dev/ttyACM1 \
+  --device cuda \
+  --enable_cameras
+```
+
+- `--controller`: registered controller to deploy in sim, such as `raw`, `pd`, or `ppo`. Default: `raw`.
+- `--controller-config`: optional YAML file with controller-specific overrides.
+- `--checkpoint-path`: PPO or learned-controller checkpoint path.
+- `--controller-coeff`: blend between direct leader teleop and controller output. `0.0` keeps pure leader control; `1.0` uses the full controller output.
+- `--teleop_device`: teleop device name. Only `so101leader` is currently supported.
+- `--port`: serial port for the SO101 leader arm.
+- `--num_envs`: number of parallel PickOrange environments. Use `1` for interactive teleop.
+- `--seed`: optional environment seed.
+- `--step_hz`: target sim control frequency.
+- `--delay-steps`: fixed post-controller command delay in control steps.
+- `--noise-std`: Gaussian joint-space command noise in radians for joints 1-4 only. Delay still applies to all joints.
+- `--recalibrate`: remove the cached leader calibration before connecting.
+- `--device`: Torch/Isaac device string.
+- `--enable_cameras`: enable RGB camera rendering.
+- `--headless`: run without the viewer.
 
 ## Scope
 

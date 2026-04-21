@@ -12,6 +12,7 @@ from isaaclab.managers import ActionTerm  # type: ignore
 from isaaclab.utils import DelayBuffer, configclass  # type: ignore
 
 from so101_hackathon.sim.teleop_utils import compose_residual_joint_commands
+from so101_hackathon.deploy.runtime import DEFAULT_NOISE_JOINT_INDICES
 
 from .adaptive_curriculum_utils import resolve_disturbance_reset_values
 
@@ -35,7 +36,7 @@ class ResidualJointPositionActionCfg(JointActionCfg):
     max_delay: int = 8
     delay_range: tuple[int, int] = (0, 0)
     noise_std_range: tuple[float, float] = (0.0, 0.0)
-    noise_joint_indices: tuple[int, ...] = (0, 1, 2, 3)
+    noise_joint_indices: tuple[int, ...] = DEFAULT_NOISE_JOINT_INDICES
     fixed_delay_steps: int | None = None
     fixed_noise_std: float | None = None
 
@@ -51,7 +52,7 @@ class AbsoluteJointPositionActionCfg(JointActionCfg):
     max_delay: int = 8
     delay_range: tuple[int, int] = (0, 0)
     noise_std_range: tuple[float, float] = (0.0, 0.0)
-    noise_joint_indices: tuple[int, ...] = (0, 1, 2, 3)
+    noise_joint_indices: tuple[int, ...] = DEFAULT_NOISE_JOINT_INDICES
     fixed_delay_steps: int | None = None
     fixed_noise_std: float | None = None
 

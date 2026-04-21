@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 
 from so101_hackathon.sim.kinematics import compute_so101_ee_jacobian, compute_so101_ee_position
 from so101_hackathon.sim.robots.so101_follower_spec import SO101_EE_BODY_NAME
+from so101_hackathon.deploy.runtime import DEFAULT_NOISE_JOINT_INDICES
 
 from .adaptive_curriculum_utils import compute_episode_joint_rmse, sample_duration_range
 
@@ -210,7 +211,14 @@ class TaskSpaceLeaderCommand(CommandTerm):
         default_joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         default_joint_vel = self.robot.data.default_joint_vel[env_ids].clone()
         target_joint_pos = self.target_joint_pos[env_ids]
-        position_noise = 0.02 * torch.randn_like(target_joint_pos)
+        position_noise = torch.zeros_like(target_joint_pos)
+        noise_joint_indices = [
+            index for index in DEFAULT_NOISE_JOINT_INDICES
+            if 0 <= int(index) < position_noise.shape[-1]
+        ]
+        if noise_joint_indices:
+            position_noise[:, noise_joint_indices] = 0.02 * \
+                torch.randn_like(position_noise[:, noise_joint_indices])
         reset_joint_pos = torch.clamp(
             target_joint_pos + position_noise,
             min=self.robot.data.soft_joint_pos_limits[env_ids][:,
