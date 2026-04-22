@@ -243,6 +243,46 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertIn("starting teleoperation immediately", stdout.getvalue())
         fake_carb.input.acquire_input_interface.assert_not_called()
 
+    def test_keyboard_reset_hotkey_does_not_stop_teleop(self):
+        """Verify reset hotkey keeps teleop running."""
+        keyboard = teleop_script.KeyboardTeleopState.__new__(
+            teleop_script.KeyboardTeleopState)
+        keyboard._carb = types.SimpleNamespace(
+            input=types.SimpleNamespace(
+                KeyboardEventType=types.SimpleNamespace(KEY_PRESS="KEY_PRESS"),
+            )
+        )
+        keyboard.started = True
+        keyboard._reset_requested = False
+        keyboard._success_requested = False
+
+        event = types.SimpleNamespace(
+            type="KEY_PRESS",
+            input=types.SimpleNamespace(name="R"),
+        )
+
+        handled = keyboard._on_keyboard_event(event)
+
+        self.assertTrue(handled)
+        self.assertTrue(keyboard.started)
+        self.assertTrue(keyboard.pop_reset_requested())
+        self.assertFalse(keyboard.pop_success_requested())
+
+    def test_vendor_reset_callback_keeps_teleop_running(self):
+        """Verify vendor reset callback re-arms teleop."""
+        teleop = teleop_script.SO101LeaderTeleop.__new__(
+            teleop_script.SO101LeaderTeleop)
+        teleop._leader_api = "vendor"
+        teleop._leader = types.SimpleNamespace(_started=False)
+        teleop._reset_requested = False
+        teleop._success_requested = False
+
+        teleop._request_reset()
+
+        self.assertTrue(teleop._reset_requested)
+        self.assertFalse(teleop._success_requested)
+        self.assertTrue(teleop._leader._started)
+
 
 if __name__ == "__main__":
     unittest.main()

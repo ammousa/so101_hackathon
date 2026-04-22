@@ -237,14 +237,19 @@ class KeyboardTeleopState:
         """Handle on keyboard event."""
         if event.type == self._carb.input.KeyboardEventType.KEY_PRESS:
             if event.input.name == "B":
+                print("[DEBUG] Keyboard hotkey B pressed: starting teleop")
                 self.started = True
                 self._reset_requested = False
                 self._success_requested = False
             elif event.input.name == "R":
-                self.started = False
+                print(
+                    f"[DEBUG] Keyboard hotkey R pressed: requesting reset "
+                    f"(started_before={self.started})"
+                )
                 self._reset_requested = True
                 self._success_requested = False
             elif event.input.name == "N":
+                print("[DEBUG] Keyboard hotkey N pressed: requesting success reset")
                 self.started = False
                 self._reset_requested = True
                 self._success_requested = True
@@ -304,11 +309,19 @@ class SO101LeaderTeleop:
 
     def _request_reset(self) -> None:
         """Handle request reset."""
+        print("[DEBUG] Vendor hotkey R callback fired: requesting reset")
         self._reset_requested = True
         self._success_requested = False
+        if self._leader_api == "vendor" and hasattr(self._leader, "_started"):
+            self._leader._started = True
+            print(
+                f"[DEBUG] Vendor leader re-armed after reset "
+                f"(leader_started={self._leader._started})"
+            )
 
     def _request_success(self) -> None:
         """Handle request success."""
+        print("[DEBUG] Vendor hotkey N callback fired: requesting success reset")
         self._reset_requested = True
         self._success_requested = True
 
@@ -735,6 +748,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     viewport_layout = None
     teleop.display_controls()
+    print(f"[DEBUG] Teleop leader API: {teleop._leader_api}")
     rate_limiter = RateLimiter(args.step_hz)
 
     if hasattr(env, "initialize"):
@@ -762,25 +776,32 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while simulation_app.is_running() and not interrupted:
             if teleop.pop_success_requested():
+                print("[DEBUG] Success reset requested: entering success-reset branch")
                 print("Task Success!!!")
                 manual_terminate(env, True)
+                print("[DEBUG] Calling env.reset() after success")
                 env.reset()
+                print("[DEBUG] env.reset() completed after success")
                 controller.reset()
                 observation_builder.reset()
                 disturbance_channel.reset()
                 if original_success_cfg is not None:
                     env.termination_manager.set_term_cfg(
                         "success", original_success_cfg)
+                print("[DEBUG] Success-reset branch completed")
                 continue
             if teleop.pop_reset_requested():
-                manual_terminate(env, False)
+                print("[DEBUG] Reset requested: entering reset branch")
+                print("[DEBUG] Calling env.reset() after reset request")
                 env.reset()
+                print("[DEBUG] env.reset() completed after reset request")
                 controller.reset()
                 observation_builder.reset()
                 disturbance_channel.reset()
                 if original_success_cfg is not None:
                     env.termination_manager.set_term_cfg(
                         "success", original_success_cfg)
+                print("[DEBUG] Reset branch completed")
                 continue
 
             if env.cfg.dynamic_reset_gripper_effort_limit:
@@ -822,7 +843,12 @@ def main(argv: list[str] | None = None) -> int:
                 env.step(actions)
                 observation_builder.set_previous_action(controller_decided_actions)
             rate_limiter.sleep(env)
+        print(
+            f"[DEBUG] Main loop exited "
+            f"(simulation_running={simulation_app.is_running()}, interrupted={interrupted})"
+        )
     finally:
+        print("[DEBUG] Entering teleop cleanup")
         signal.signal(signal.SIGINT, original_sigint_handler)
         if viewport_layout is not None:
             viewport_layout.close()
@@ -832,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
         teleop.close()
         env.close()
         simulation_app.close()
+        print("[DEBUG] Teleop cleanup completed")
 
     return 0
 

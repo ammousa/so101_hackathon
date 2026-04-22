@@ -130,7 +130,7 @@ class PickOrangeEnvCfg(SingleArmTaskEnvCfg):
         parse_usd_and_create_subassets(
             KITCHEN_WITH_ORANGE_USD_PATH,
             self,
-            specific_name_list=["Orange001"],
+            specific_name_list=["Orange001", "Orange002", "Orange003", "Plate"],
         )
 
 
