@@ -9,10 +9,12 @@ from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 
 
 def _as_list(values: Iterable[float]) -> list[float]:
+    """Handle as list."""
     return [float(value) for value in values]
 
 
 def _euclidean_norm(values: Iterable[float]) -> float:
+    """Handle euclidean norm."""
     return math.sqrt(sum(float(value) * float(value) for value in values))
 
 
@@ -20,11 +22,13 @@ class DeployMetricAccumulator:
     """Accumulate deploy-time tracking metrics and time-series rows."""
 
     def __init__(self, joint_names: Iterable[str] = TELEOP_JOINT_NAMES, failure_threshold: float = 0.75):
+        """Initialize the object."""
         self.joint_names = list(joint_names)
         self.failure_threshold = float(failure_threshold)
         self.reset()
 
     def reset(self) -> None:
+        """Reset internal state."""
         self.count = 0
         self.sum_joint_mse = 0.0
         self.sum_ee_error_sq = 0.0
@@ -44,6 +48,7 @@ class DeployMetricAccumulator:
         leader_joint_pos: list[float],
         follower_joint_pos: list[float],
     ) -> float:
+        """Compute ee position error."""
         try:
             import torch
         except ModuleNotFoundError:
@@ -69,6 +74,7 @@ class DeployMetricAccumulator:
         follower_joint_pos: Iterable[float],
         commanded_joint_pos: Iterable[float],
     ) -> dict[str, float]:
+        """Update accumulated metrics."""
         leader = _as_list(leader_joint_pos)
         follower = _as_list(follower_joint_pos)
         commanded = _as_list(commanded_joint_pos)
@@ -127,6 +133,7 @@ class DeployMetricAccumulator:
         }
 
     def summary(self) -> dict[str, float]:
+        """Run summary."""
         count = max(self.count, 1)
         return {
             "joint_rmse": math.sqrt(self.sum_joint_mse / count),
@@ -138,6 +145,7 @@ class DeployMetricAccumulator:
         }
 
     def per_joint_summary(self) -> dict[str, dict[str, float]]:
+        """Run per joint summary."""
         count = max(self.count, 1)
         return {
             joint_name: {
@@ -149,15 +157,18 @@ class DeployMetricAccumulator:
         }
 
     def timeseries_rows(self) -> list[dict[str, float]]:
+        """Run timeseries rows."""
         return list(self._timeseries_rows)
 
     def summary_payload(self) -> dict[str, object]:
+        """Run summary payload."""
         return {
             "summary": self.summary(),
             "per_joint": self.per_joint_summary(),
         }
 
     def format_status_line(self, *, iter_idx: int, hz: float) -> str:
+        """Format status line."""
         summary = self.summary()
         return (
             f"[{iter_idx:06d}] "
@@ -168,9 +179,11 @@ class DeployMetricAccumulator:
         )
 
     def format_last_joint_errors(self) -> str:
+        """Format last joint errors."""
         return " | ".join(f"{joint_name}={self.last_abs_err[joint_name]:.3f}" for joint_name in self.joint_names)
 
     def format_final_report(self) -> str:
+        """Format final report."""
         summary = self.summary()
         lines = ["", "Final deploy metrics:"]
         for joint_name, payload in self.per_joint_summary().items():

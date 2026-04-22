@@ -28,6 +28,7 @@ class TeleopPDController(BaseController):
     max_action: float = 1.0
 
     def act(self, obs: Any) -> Any:
+        """Compute an action."""
         parsed = parse_teleop_observation(obs)
         leader_joint_pos = parsed["leader_joint_pos"]
         joint_error = parsed["joint_error"]

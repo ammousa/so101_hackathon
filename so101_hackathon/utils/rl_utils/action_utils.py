@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 
+TELEOP_RESIDUAL_ACTION_SCALE = 0.25
+
+
 def _is_torch_tensor(values: Any) -> bool:
+    """Return whether torch tensor."""
     return hasattr(values, "shape") and hasattr(values, "dtype") and hasattr(values, "device")
 
 

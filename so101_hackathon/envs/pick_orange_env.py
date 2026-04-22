@@ -36,6 +36,7 @@ def orange_grasped(
     diff_threshold: float = 0.05,
     grasp_threshold: float = 0.60,
 ) -> torch.Tensor:
+    """Run orange grasped."""
     robot: Articulation = env.scene[robot_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -57,6 +58,7 @@ def put_orange_to_plate(
     diff_threshold: float = 0.05,
     grasp_threshold: float = 0.60,
 ) -> torch.Tensor:
+    """Run put orange to plate."""
     robot: Articulation = env.scene[robot_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
     orange: RigidObject = env.scene[object_cfg.name]
@@ -85,6 +87,7 @@ def task_done(
     y_range: tuple[float, float] = (-0.10, 0.10),
     height_range: tuple[float, float] = (-0.07, 0.07),
 ) -> torch.Tensor:
+    """Run task done."""
     done = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
     plate: RigidObject = env.scene[plate_cfg.name]
     plate_x = plate.data.root_pos_w[:, 0] - env.scene.env_origins[:, 0]
@@ -122,6 +125,7 @@ class PickOrangeEnvCfg(SingleArmTaskEnvCfg):
     task_description: str = "Pick three oranges and put them into the plate, then reset the arm to rest state."
 
     def __post_init__(self) -> None:
+        """Finalize dataclass initialization."""
         super().__post_init__()
         parse_usd_and_create_subassets(
             KITCHEN_WITH_ORANGE_USD_PATH,
@@ -144,6 +148,7 @@ class PickOrangeEnvBuilder(BaseHackathonEnvBuilder):
         device: str = "cpu",
         **_: Any,
     ) -> PickOrangeEnvCfg:
+        """Build env cfg."""
         env_cfg = PickOrangeEnvCfg()
         env_cfg.use_teleop_device(teleop_device)
         env_cfg.seed = seed if seed is not None else int(time.time())
@@ -152,6 +157,7 @@ class PickOrangeEnvBuilder(BaseHackathonEnvBuilder):
         return env_cfg
 
     def make_direct_env(self, *, env_cfg: PickOrangeEnvCfg, render_mode: str | None = None):
+        """Create direct env."""
         self.require_isaac_stack()
         return ManagerBasedRLEnv(cfg=env_cfg, render_mode=render_mode)
 

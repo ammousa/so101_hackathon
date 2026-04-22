@@ -11,6 +11,7 @@ from so101_hackathon.rl_training import runtime_utils
 
 class _FakeRenderEnv:
     def __init__(self, frames, *, render_error: Exception | None = None):
+        """Initialize the object."""
         self._frames = list(frames)
         self._render_error = render_error
         self.render_calls = 0
@@ -20,10 +21,12 @@ class _FakeRenderEnv:
         self.action_space.sample.return_value = [0.0] * 6
 
     def reset(self):
+        """Reset internal state."""
         self.reset_calls += 1
         return [0.0] * 6
 
     def render(self):
+        """Render a frame."""
         self.render_calls += 1
         if self._render_error is not None:
             raise self._render_error
@@ -32,6 +35,7 @@ class _FakeRenderEnv:
         return np.zeros((4, 4, 3), dtype=np.uint8)
 
     def step(self, action):
+        """Step the environment."""
         del action
         self.step_calls += 1
         return [0.0] * 6, 0.0, False, {}
@@ -39,6 +43,7 @@ class _FakeRenderEnv:
 
 class RuntimeUtilsTests(unittest.TestCase):
     def test_normalize_device_for_runtime_falls_back_to_cpu_and_disables_video(self):
+        """Verify normalize device for runtime falls back to cpu and disables video."""
         with mock.patch.object(runtime_utils, "cuda_is_healthy", return_value=(False, "bad driver")):
             device, video_enabled = runtime_utils.normalize_device_for_runtime(
                 requested_device="cuda:0",
@@ -49,6 +54,7 @@ class RuntimeUtilsTests(unittest.TestCase):
         self.assertFalse(video_enabled)
 
     def test_normalize_device_for_runtime_keeps_cpu_request(self):
+        """Verify normalize device for runtime keeps cpu request."""
         with mock.patch.object(runtime_utils, "cuda_is_healthy") as mocked_health:
             device, video_enabled = runtime_utils.normalize_device_for_runtime(
                 requested_device="cpu",
@@ -60,10 +66,12 @@ class RuntimeUtilsTests(unittest.TestCase):
         mocked_health.assert_not_called()
 
     def test_parse_version_tuple_stops_at_non_numeric_suffix(self):
+        """Verify parse version tuple stops at non numeric suffix."""
         self.assertEqual(runtime_utils._parse_version_tuple("535.129.03"), (535, 129, 3))
         self.assertEqual(runtime_utils._parse_version_tuple("535.129.beta"), (535, 129))
 
     def test_apply_video_renderer_fallback_appends_flags_once(self):
+        """Verify apply video renderer fallback appends flags once."""
         args = argparse.Namespace(video=True, kit_args="")
 
         with mock.patch.object(runtime_utils, "_get_nvidia_driver_version", return_value="530.41"):
@@ -75,6 +83,7 @@ class RuntimeUtilsTests(unittest.TestCase):
         self.assertEqual(args.kit_args, first_pass)
 
     def test_extract_rgb_frame_handles_batched_render(self):
+        """Verify extract rgb frame handles batched render."""
         frame = np.arange(1 * 3 * 4 * 4, dtype=np.uint8).reshape(1, 3, 4, 4)
 
         rgb = runtime_utils._extract_rgb_frame(frame)
@@ -82,6 +91,7 @@ class RuntimeUtilsTests(unittest.TestCase):
         self.assertEqual(rgb.shape, (3, 4, 3))
 
     def test_validate_rgb_rendering_accepts_non_black_frame(self):
+        """Verify validate rgb rendering accepts non black frame."""
         env = _FakeRenderEnv(
             [
                 np.zeros((4, 4, 3), dtype=np.uint8),
@@ -103,6 +113,7 @@ class RuntimeUtilsTests(unittest.TestCase):
         self.assertGreaterEqual(env.step_calls, 1)
 
     def test_validate_rgb_rendering_reports_render_exception(self):
+        """Verify validate rgb rendering reports render exception."""
         env = _FakeRenderEnv([], render_error=RuntimeError("boom"))
 
         ok, reason = runtime_utils.validate_rgb_rendering(env, max_checks=2)

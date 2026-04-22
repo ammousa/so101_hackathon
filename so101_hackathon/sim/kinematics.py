@@ -16,6 +16,7 @@ from so101_hackathon.sim.robots.so101_follower_spec import (
 
 
 def _rpy_to_matrix(roll: float, pitch: float, yaw: float) -> torch.Tensor:
+    """Handle rpy to matrix."""
     cr, sr = math.cos(roll), math.sin(roll)
     cp, sp = math.cos(pitch), math.sin(pitch)
     cy, sy = math.cos(yaw), math.sin(yaw)
@@ -30,6 +31,7 @@ def _rpy_to_matrix(roll: float, pitch: float, yaw: float) -> torch.Tensor:
 
 
 def _rotation_about_z(angles: torch.Tensor) -> torch.Tensor:
+    """Handle rotation about z."""
     cos_angle = torch.cos(angles)
     sin_angle = torch.sin(angles)
     rotation = torch.zeros((angles.shape[0], 3, 3), dtype=angles.dtype, device=angles.device)
@@ -91,6 +93,7 @@ def _prepare_arm_joint_positions(
     joint_positions: torch.Tensor,
     joint_names: Iterable[str],
 ) -> tuple[torch.Tensor, list[str]]:
+    """Handle prepare arm joint positions."""
     if joint_positions.ndim != 2:
         raise ValueError(f"Expected joint_positions shape (N, D), received {tuple(joint_positions.shape)}")
 
@@ -114,6 +117,7 @@ def _prepare_arm_joint_positions(
 def _forward_so101_arm(
     arm_joint_positions: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Handle forward so101 arm."""
     batch_size = arm_joint_positions.shape[0]
     rotation = torch.eye(3, dtype=arm_joint_positions.dtype, device=arm_joint_positions.device)
     rotation = rotation.unsqueeze(0).repeat(batch_size, 1, 1)

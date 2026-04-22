@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Calibrate one SO101 leader or follower arm.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -45,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
     if args.role == "leader":
         port = args.port or DEFAULT_LEADER_PORT

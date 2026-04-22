@@ -10,4 +10,5 @@ class _LaunchTestingCompatHooks:
 
 
 def pytest_addhooks(pluginmanager):
+    """Register pytest plugin hooks."""
     pluginmanager.add_hookspecs(_LaunchTestingCompatHooks)

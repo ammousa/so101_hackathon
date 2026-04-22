@@ -16,6 +16,7 @@ class BaseHackathonEnvBuilder:
     """Base builder that centralizes Isaac stack checks and app launch."""
 
     def require_isaac_stack(self) -> None:
+        """Run require isaac stack."""
         missing = []
         for module_name in ("isaaclab", "gymnasium", "isaaclab_rl"):
             try:
@@ -29,6 +30,7 @@ class BaseHackathonEnvBuilder:
             )
 
     def build_env_cfg(self, **kwargs: Any) -> Any:
+        """Build env cfg."""
         raise NotImplementedError
 
     def make_env(
@@ -42,6 +44,7 @@ class BaseHackathonEnvBuilder:
         video_length: int = 600,
         wrap_for_rl: bool = False,
     ) -> Any:
+        """Create env."""
         self.require_isaac_stack()
 
         import gymnasium as gym
@@ -90,6 +93,7 @@ class BaseHackathonEnvBuilder:
         wrap_for_rl: bool = False,
         **build_kwargs: Any,
     ) -> TeleopEnvLaunch:
+        """Launch and make env."""
         self.require_isaac_stack()
 
         import argparse

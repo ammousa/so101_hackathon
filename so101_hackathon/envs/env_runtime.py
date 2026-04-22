@@ -4,12 +4,14 @@ from __future__ import annotations
 
 
 def dynamic_reset_gripper_effort_limit_sim(env, teleop_device: str) -> None:
+    """Update the simulated gripper effort limit for SO101 leader teleop."""
     if teleop_device != "so101leader":
         return
     write_gripper_effort_limit_sim(env, env.scene["robot"])
 
 
 def write_gripper_effort_limit_sim(env, env_arm) -> None:
+    """Write gripper effort limits based on the nearest object mass."""
     try:
         import torch
     except ModuleNotFoundError as exc:  # pragma: no cover - runtime environment specific

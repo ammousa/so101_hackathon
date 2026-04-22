@@ -7,6 +7,7 @@ from so101_hackathon.rl_training.ppo_config import TeleopPpoRunnerCfg
 
 class TeleopPpoRunnerCfgTests(unittest.TestCase):
     def test_to_dict_matches_current_rsl_rl_runner_schema(self):
+        """Verify to dict matches current rsl rl runner schema."""
         cfg = TeleopPpoRunnerCfg(empirical_normalization=True)
 
         runner_cfg = cfg.to_dict()

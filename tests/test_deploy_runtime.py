@@ -21,6 +21,7 @@ from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 
 
 def _robot_obs(positions_deg: list[float]) -> dict[str, float]:
+    """Handle robot obs."""
     return {
         f"{joint_name}.pos": float(positions_deg[index])
         for index, joint_name in enumerate(TELEOP_JOINT_NAMES)
@@ -29,6 +30,7 @@ def _robot_obs(positions_deg: list[float]) -> dict[str, float]:
 
 class DeployRuntimeTests(unittest.TestCase):
     def test_observation_builder_initializes_velocities_and_previous_action(self):
+        """Verify observation builder initializes velocities and previous action."""
         builder = LiveTeleopObservationBuilder()
         joint_limits = parse_joint_limits_from_urdf()
         gripper_lower, gripper_upper = joint_limits["gripper"]
@@ -61,6 +63,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertEqual(live_obs.observation[-6:], [0.0] * 6)
 
     def test_observation_builder_propagates_previous_action_and_velocity(self):
+        """Verify observation builder propagates previous action and velocity."""
         builder = LiveTeleopObservationBuilder()
         builder.build(
             leader_observation=_robot_obs(
@@ -97,7 +100,27 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(
             live_obs.joint_error_vel[0], expected_error_delta / 0.5, places=6)
 
+    def test_observation_builder_clips_finite_difference_velocity_symmetrically(self):
+        """Verify observation builder clips finite difference velocity symmetrically."""
+        builder = LiveTeleopObservationBuilder()
+        builder.build(
+            leader_observation=_robot_obs(
+                [100.0, 100.0, 100.0, 100.0, 100.0, 100.0]),
+            follower_observation=_robot_obs([0.0] * 6),
+            dt=1.0,
+        )
+
+        live_obs = builder.build(
+            leader_observation=_robot_obs(
+                [-100.0, -100.0, -100.0, -100.0, -100.0, 0.0]),
+            follower_observation=_robot_obs([0.0] * 6),
+            dt=0.001,
+        )
+
+        self.assertEqual(live_obs.leader_joint_vel[:5], [-100.0] * 5)
+
     def test_blend_and_clamp_helpers(self):
+        """Verify blend and clamp helpers."""
         leader = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
         controller = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
 
@@ -119,6 +142,7 @@ class DeployRuntimeTests(unittest.TestCase):
         )
 
     def test_build_follower_action_converts_all_joint_positions_to_degrees(self):
+        """Verify build follower action converts all joint positions to degrees."""
         joint_limits = parse_joint_limits_from_urdf()
         gripper_lower, gripper_upper = joint_limits["gripper"]
         mid_gripper = gripper_lower + 0.5 * (gripper_upper - gripper_lower)
@@ -136,6 +160,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(action["gripper.pos"], 50.0, places=6)
 
     def test_build_follower_action_can_skip_missing_gripper_joint(self):
+        """Verify build follower action can skip missing gripper joint."""
         action = build_follower_action(
             [math.pi / 2, 0.0, -math.pi / 4, math.pi, -math.pi / 6, math.pi / 3],
             active_joint_names=TELEOP_JOINT_NAMES[:-1],
@@ -145,6 +170,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertNotIn("gripper.pos", action)
 
     def test_observation_builder_can_fill_missing_follower_gripper_from_leader(self):
+        """Verify observation builder can fill missing follower gripper from leader."""
         builder = LiveTeleopObservationBuilder(
             missing_follower_joint_names={"gripper"})
         follower_observation = _robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -166,6 +192,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(live_obs.joint_error[-1], 0.0, places=6)
 
     def test_gripper_observation_and_action_round_trip_between_percent_and_radians(self):
+        """Verify gripper observation and action round trip between percent and radians."""
         joint_limits = parse_joint_limits_from_urdf()
         gripper_lower, gripper_upper = joint_limits["gripper"]
         expected_gripper = gripper_lower + \
@@ -179,6 +206,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(action["gripper.pos"], 25.0, places=6)
 
     def test_hardware_obs_to_joint_positions_still_raises_for_unexpected_missing_joint(self):
+        """Verify hardware obs to joint positions still raises for unexpected missing joint."""
         follower_observation = _robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         follower_observation.pop("gripper.pos")
 
@@ -186,6 +214,7 @@ class DeployRuntimeTests(unittest.TestCase):
             hardware_obs_to_joint_positions(follower_observation)
 
     def test_disturbance_channel_applies_fixed_delay(self):
+        """Verify disturbance channel applies fixed delay."""
         channel = FixedDisturbanceChannel(delay_steps=2, noise_std=0.0, seed=0)
 
         outputs = [
@@ -201,6 +230,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertEqual(outputs[3], [2.0, 0.0, 0.0, 0.0, 7.0, 8.0])
 
     def test_disturbance_channel_noise_only_affects_first_four_joints(self):
+        """Verify disturbance channel noise only affects first four joints."""
         self.assertEqual(DEFAULT_NOISE_JOINT_INDICES, (0, 1, 2, 3))
         channel = FixedDisturbanceChannel(
             delay_steps=0, noise_std=0.05, seed=7)
@@ -211,6 +241,7 @@ class DeployRuntimeTests(unittest.TestCase):
         self.assertEqual(output[4:], [5.0, 6.0])
 
     def test_disturbance_channel_noise_is_seeded_and_resettable(self):
+        """Verify disturbance channel noise is seeded and resettable."""
         channel = FixedDisturbanceChannel(
             delay_steps=0, noise_std=0.05, seed=7)
 

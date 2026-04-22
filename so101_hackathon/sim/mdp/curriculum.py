@@ -63,6 +63,7 @@ class AdaptiveTeleopDifficultyCurriculum(ManagerTermBase):
     """Adaptive per-environment curriculum for teleoperation tracking."""
 
     def __init__(self, cfg, env):
+        """Initialize the object."""
         super().__init__(cfg, env)
         params_cfg = self.cfg.params["params_cfg"]
         max_level = min(int(params_cfg.max_level), max(len(params_cfg.levels) - 1, 0))

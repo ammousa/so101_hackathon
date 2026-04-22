@@ -28,6 +28,7 @@ TELEOP_JOINT_NAMES = ARM_JOINT_NAMES + ["gripper"]
 @unittest.skipIf(torch is None, "torch is required for kinematics tests")
 class So101KinematicsTests(unittest.TestCase):
     def test_gripper_input_does_not_change_gripper_link_position(self):
+        """Verify gripper input does not change gripper link position."""
         arm_joint_pos = torch.tensor([[0.1, -0.2, 0.3, -0.1, 0.2]], dtype=torch.float32)
         with_gripper_a = torch.tensor([[0.1, -0.2, 0.3, -0.1, 0.2, 0.0]], dtype=torch.float32)
         with_gripper_b = torch.tensor([[0.1, -0.2, 0.3, -0.1, 0.2, 0.9]], dtype=torch.float32)
@@ -40,6 +41,7 @@ class So101KinematicsTests(unittest.TestCase):
         self.assertTrue(torch.allclose(ee_position_a, ee_position_b, atol=1e-6, rtol=1e-6))
 
     def test_analytic_position_jacobian_matches_finite_difference(self):
+        """Verify analytic position jacobian matches finite difference."""
         joint_pos = torch.tensor([[0.15, -0.35, 0.25, -0.2, 0.1]], dtype=torch.float32)
         analytic = compute_so101_ee_jacobian(joint_pos, joint_names=ARM_JOINT_NAMES)
 
@@ -56,6 +58,7 @@ class So101KinematicsTests(unittest.TestCase):
         self.assertTrue(torch.allclose(analytic, finite_difference, atol=2e-3, rtol=2e-3))
 
     def test_chain_points_include_all_arm_joints_plus_end_effector(self):
+        """Verify chain points include all arm joints plus end effector."""
         joint_pos = torch.zeros((2, len(TELEOP_JOINT_NAMES)), dtype=torch.float32)
         chain_points = compute_so101_chain_points(joint_pos, joint_names=TELEOP_JOINT_NAMES)
 

@@ -10,6 +10,7 @@ from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
 
 
 def _as_list(values: Iterable[float]) -> list[float]:
+    """Handle as list."""
     return [float(value) for value in values]
 
 
@@ -34,6 +35,7 @@ class TeleopMetricAccumulator:
     _failed: bool = field(default=False, init=False, repr=False)
 
     def reset_episode(self) -> None:
+        """Reset episode."""
         self._step_count = 0
         self._sum_joint_mse = 0.0
         self._max_joint_error = 0.0
@@ -54,6 +56,7 @@ class TeleopMetricAccumulator:
         invalid_state: bool = False,
         failure: bool = False,
     ) -> None:
+        """Run add step."""
         errors = _as_list(joint_error)
         if len(errors) != self.joint_count:
             raise ValueError(
@@ -76,6 +79,7 @@ class TeleopMetricAccumulator:
         self._failed = self._failed or failure_event
 
     def finish_episode(self) -> dict[str, float]:
+        """Finish episode."""
         count = max(self._step_count, 1)
         episode = {
             "joint_rmse": math.sqrt(self._sum_joint_mse / count),
@@ -92,6 +96,7 @@ class TeleopMetricAccumulator:
         return episode
 
     def summary(self) -> dict[str, float]:
+        """Run summary."""
         if not self._episodes:
             return {
                 "eval/joint_rmse": 0.0,

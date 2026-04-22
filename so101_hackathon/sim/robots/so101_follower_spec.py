@@ -86,14 +86,17 @@ SO101_KINEMATICS_ORIGINS_RPY: tuple[tuple[float, float, float], ...] = (
 
 
 def degrees_to_radians(value_deg: float) -> float:
+    """Run degrees to radians."""
     return math.radians(float(value_deg))
 
 
 def radians_to_degrees(value_rad: float) -> float:
+    """Run radians to degrees."""
     return math.degrees(float(value_rad))
 
 
 def follower_joint_limits_rad_map() -> dict[str, tuple[float, float]]:
+    """Run follower joint limits rad map."""
     return {
         joint_name: (
             degrees_to_radians(lower_deg),
@@ -106,6 +109,7 @@ def follower_joint_limits_rad_map() -> dict[str, tuple[float, float]]:
 def follower_joint_limit_vectors_rad(
     joint_names: Iterable[str] = SO101_JOINT_NAMES,
 ) -> tuple[list[float], list[float]]:
+    """Run follower joint limit vectors rad."""
     joint_limits = follower_joint_limits_rad_map()
     lower = [float(joint_limits[joint_name][0]) for joint_name in joint_names]
     upper = [float(joint_limits[joint_name][1]) for joint_name in joint_names]
@@ -113,6 +117,7 @@ def follower_joint_limit_vectors_rad(
 
 
 def rest_pose_range_rad_map() -> dict[str, tuple[float, float]]:
+    """Run rest pose range rad map."""
     return {
         joint_name: (
             degrees_to_radians(lower_deg),
@@ -128,6 +133,7 @@ def motor_value_to_joint_radians(
     *,
     motor_limits: dict[str, tuple[float, float]] | None = None,
 ) -> float:
+    """Run motor value to joint radians."""
     if joint_name not in SO101_FOLLOWER_USD_JOINT_LIMITS_DEG:
         raise KeyError(f"Unknown SO101 joint `{joint_name}`")
     motor_lower, motor_upper = (motor_limits or SO101_FOLLOWER_MOTOR_LIMITS)[joint_name]
@@ -147,6 +153,7 @@ def joint_radians_to_motor_value(
     *,
     motor_limits: dict[str, tuple[float, float]] | None = None,
 ) -> float:
+    """Run joint radians to motor value."""
     if joint_name not in SO101_FOLLOWER_USD_JOINT_LIMITS_DEG:
         raise KeyError(f"Unknown SO101 joint `{joint_name}`")
     motor_lower, motor_upper = (motor_limits or SO101_FOLLOWER_MOTOR_LIMITS)[joint_name]
@@ -166,6 +173,7 @@ def convert_motor_observation_to_joint_positions(
     joint_names: Iterable[str] = SO101_JOINT_NAMES,
     motor_limits: dict[str, tuple[float, float]] | None = None,
 ) -> list[float]:
+    """Convert motor observation to joint positions."""
     return [
         motor_value_to_joint_radians(joint_name, float(joint_state[joint_name]), motor_limits=motor_limits)
         for joint_name in joint_names

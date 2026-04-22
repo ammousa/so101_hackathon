@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from so101_hackathon.controllers.base import BaseController
-from so101_hackathon.controllers.ppo_loader import load_env_free_ppo_policy
+from so101_hackathon.controllers.rl_ppo_loader import load_env_free_ppo_policy
 from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
 from so101_hackathon.utils.rl_utils import resolve_checkpoint_path
 
@@ -37,6 +37,7 @@ class PPOController(BaseController):
     _policy: Any | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        """Finalize dataclass initialization."""
         resolved_checkpoint = self.checkpoint_path or resolve_checkpoint_path(
             log_root_path=self.log_root,
             load_run=self.load_run,
@@ -57,6 +58,7 @@ class PPOController(BaseController):
         self._policy = self._load_policy(resolved_checkpoint)
 
     def _load_policy(self, checkpoint_path: str) -> Any:
+        """Load policy."""
         if self.env is None:
             return load_env_free_ppo_policy(
                 checkpoint_path=checkpoint_path,
@@ -80,6 +82,7 @@ class PPOController(BaseController):
         return runner.get_inference_policy(device=self.env.unwrapped.device)
 
     def act(self, obs: Any) -> Any:
+        """Compute an action."""
         if self._policy is None:
             raise RuntimeError("PPO policy was not initialized correctly.")
 

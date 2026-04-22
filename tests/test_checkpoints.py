@@ -9,6 +9,7 @@ from so101_hackathon.utils.rl_utils import resolve_checkpoint_path
 
 class CheckpointResolutionTests(unittest.TestCase):
     def test_direct_checkpoint_path_wins(self):
+        """Verify direct checkpoint path wins."""
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint = os.path.join(tmpdir, "model.pt")
             with open(checkpoint, "w", encoding="utf-8") as handle:
@@ -19,6 +20,7 @@ class CheckpointResolutionTests(unittest.TestCase):
             self.assertEqual(resolved, os.path.abspath(checkpoint))
 
     def test_regex_resolution_selects_latest_matching_run_and_checkpoint(self):
+        """Verify regex resolution selects latest matching run and checkpoint."""
         with tempfile.TemporaryDirectory() as tmpdir:
             run_a = os.path.join(tmpdir, "2026-04-01_12-00-00")
             run_b = os.path.join(tmpdir, "2026-04-02_12-00-00")

@@ -13,14 +13,13 @@ import random
 from typing import Any, Iterable
 
 from so101_hackathon.sim.robots.so101_follower_spec import (
-    SO101_FOLLOWER_MOTOR_LIMITS,
     follower_joint_limit_vectors_rad,
     follower_joint_limits_rad_map,
     joint_radians_to_motor_value,
     motor_value_to_joint_radians,
 )
 from so101_hackathon.utils.eval_utils import checkpoint_run_dir
-from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES
+from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES, finite_difference_velocity
 
 DEFAULT_FPS = 60
 DEFAULT_TELEOP_TIME_S = None
@@ -34,41 +33,20 @@ DEFAULT_NOISE_STD = 0.0
 DEFAULT_NOISE_JOINT_INDICES = (0, 1, 2, 3)
 
 _JOINT_KEY_SUFFIX = ".pos"
-_GRIPPER_JOINT_NAME = "gripper"
 
 
 def repo_root() -> Path:
+    """Run repo root."""
     return Path(__file__).resolve().parents[2]
 
 
 def joint_field_name(joint_name: str) -> str:
+    """Run joint field name."""
     return f"{joint_name}{_JOINT_KEY_SUFFIX}"
 
 
-def _gripper_joint_limits_rad() -> tuple[float, float]:
-    joint_limits = parse_joint_limits_from_urdf()
-    lower, upper = joint_limits[_GRIPPER_JOINT_NAME]
-    return float(lower), float(upper)
-
-
-def _gripper_percent_to_radians(value_percent: float) -> float:
-    lower, upper = _gripper_joint_limits_rad()
-    bounded_value = min(100.0, max(0.0, float(value_percent)))
-    alpha = bounded_value / 100.0
-    return lower + alpha * (upper - lower)
-
-
-def _gripper_radians_to_percent(value_rad: float) -> float:
-    lower, upper = _gripper_joint_limits_rad()
-    if upper <= lower:
-        raise ValueError(
-            f"Invalid gripper joint limits: lower={lower}, upper={upper}")
-    bounded_value = min(upper, max(lower, float(value_rad)))
-    alpha = (bounded_value - lower) / (upper - lower)
-    return 100.0 * alpha
-
-
 def _coerce_vector(values: Any, *, joint_dim: int = len(TELEOP_JOINT_NAMES)) -> list[float]:
+    """Coerce vector."""
     if isinstance(values, list):
         if len(values) != joint_dim:
             raise ValueError(
@@ -92,10 +70,12 @@ def _coerce_vector(values: Any, *, joint_dim: int = len(TELEOP_JOINT_NAMES)) -> 
 
 
 def degrees_to_radians(values: Iterable[float]) -> list[float]:
+    """Run degrees to radians."""
     return [math.radians(float(value)) for value in values]
 
 
 def radians_to_degrees(values: Iterable[float]) -> list[float]:
+    """Run radians to degrees."""
     return [math.degrees(float(value)) for value in values]
 
 
@@ -105,6 +85,7 @@ def hardware_obs_to_joint_positions(
     allowed_missing_joint_names: Iterable[str] = (),
     fallback_joint_positions_rad: Iterable[float] | None = None,
 ) -> list[float]:
+    """Run hardware obs to joint positions."""
     allowed_missing = set(allowed_missing_joint_names)
     fallback_joint_positions = (
         _coerce_vector(
@@ -129,6 +110,7 @@ def build_follower_action(
     *,
     active_joint_names: Iterable[str] | None = None,
 ) -> dict[str, float]:
+    """Build follower action."""
     joint_positions = _coerce_vector(joint_positions_rad)
     active_joint_name_set = set(
         active_joint_names) if active_joint_names is not None else set(TELEOP_JOINT_NAMES)
@@ -143,6 +125,7 @@ def build_follower_action(
 
 
 def normalize_controller_action(action: Any) -> list[float]:
+    """Normalize controller action."""
     return _coerce_vector(action)
 
 
@@ -151,6 +134,7 @@ def blend_with_leader(
     controller_joint_pos: Iterable[float],
     coeff: float,
 ) -> list[float]:
+    """Blend with leader."""
     if coeff < 0.0 or coeff > 1.0:
         raise ValueError(
             f"controller coefficient must be within [0, 1], received {coeff}")
@@ -168,6 +152,7 @@ def clamp_joint_positions(
     lower_limits: Iterable[float],
     upper_limits: Iterable[float],
 ) -> list[float]:
+    """Clamp joint positions."""
     positions = _coerce_vector(joint_positions)
     lower = _coerce_vector(lower_limits)
     upper = _coerce_vector(upper_limits)
@@ -187,6 +172,7 @@ class FixedDisturbanceChannel:
     noise_joint_indices: tuple[int, ...] = DEFAULT_NOISE_JOINT_INDICES
 
     def __post_init__(self) -> None:
+        """Finalize dataclass initialization."""
         if self.delay_steps < 0:
             raise ValueError(
                 f"delay_steps must be >= 0, received {self.delay_steps}")
@@ -199,10 +185,12 @@ class FixedDisturbanceChannel:
         self._rng = random.Random(self.seed)
 
     def reset(self) -> None:
+        """Reset internal state."""
         self._buffer = []
         self._rng = random.Random(self.seed)
 
     def apply(self, joint_positions: Iterable[float]) -> list[float]:
+        """Apply the configured transform."""
         command = _coerce_vector(joint_positions)
         self._buffer.append(list(command))
         if len(self._buffer) <= self.delay_steps:
@@ -220,11 +208,13 @@ class FixedDisturbanceChannel:
 
 
 def parse_joint_limits_from_urdf(urdf_path: str | Path | None = None) -> dict[str, tuple[float, float]]:
+    """Parse joint limits from urdf."""
     del urdf_path
     return follower_joint_limits_rad_map()
 
 
 def get_joint_limit_vectors() -> tuple[list[float], list[float]]:
+    """Return joint limit vectors."""
     return follower_joint_limit_vectors_rad(TELEOP_JOINT_NAMES)
 
 
@@ -243,17 +233,20 @@ class LiveTeleopObservationBuilder:
     """Reconstruct the flat teleop observation used during hackathon evaluation."""
 
     def __init__(self, *, missing_follower_joint_names: Iterable[str] = ()):
+        """Initialize the object."""
         self._previous_leader_joint_pos: list[float] | None = None
         self._previous_joint_error: list[float] | None = None
         self._previous_action: list[float] = [0.0] * len(TELEOP_JOINT_NAMES)
         self._missing_follower_joint_names = set(missing_follower_joint_names)
 
     def reset(self) -> None:
+        """Reset internal state."""
         self._previous_leader_joint_pos = None
         self._previous_joint_error = None
         self._previous_action = [0.0] * len(TELEOP_JOINT_NAMES)
 
     def set_previous_action(self, action: Iterable[float]) -> None:
+        """Set previous action."""
         self._previous_action = _coerce_vector(action)
 
     def build(
@@ -263,6 +256,7 @@ class LiveTeleopObservationBuilder:
         follower_observation: dict[str, float],
         dt: float,
     ) -> LiveTeleopObservation:
+        """Build the observation."""
         leader_joint_pos = hardware_obs_to_joint_positions(leader_observation)
         follower_joint_pos = hardware_obs_to_joint_positions(
             follower_observation,
@@ -277,14 +271,10 @@ class LiveTeleopObservationBuilder:
             leader_joint_vel = [0.0] * len(TELEOP_JOINT_NAMES)
             joint_error_vel = [0.0] * len(TELEOP_JOINT_NAMES)
         else:
-            leader_joint_vel = [
-                (float(current) - float(previous)) / dt
-                for current, previous in zip(leader_joint_pos, self._previous_leader_joint_pos)
-            ]
-            joint_error_vel = [
-                (float(current) - float(previous)) / dt
-                for current, previous in zip(joint_error, self._previous_joint_error or joint_error)
-            ]
+            leader_joint_vel = finite_difference_velocity(
+                leader_joint_pos, self._previous_leader_joint_pos, dt)
+            joint_error_vel = finite_difference_velocity(
+                joint_error, self._previous_joint_error or joint_error, dt)
 
         observation = (
             list(leader_joint_pos)
@@ -312,6 +302,7 @@ def resolve_deploy_output_dir(
     requested_output_dir: str | None,
     checkpoint_path: str | None,
 ) -> str:
+    """Resolve deploy output dir."""
     if requested_output_dir:
         return os.path.abspath(requested_output_dir)
 
@@ -333,6 +324,7 @@ def build_deploy_config(
     lower_limits: Iterable[float],
     upper_limits: Iterable[float],
 ) -> dict[str, Any]:
+    """Build deploy config."""
     return {
         "controller": controller_name,
         "args": vars(args).copy(),
@@ -346,12 +338,14 @@ def build_deploy_config(
 
 
 def write_json(path: str | Path, payload: dict[str, Any]) -> None:
+    """Write json."""
     path = Path(path)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
 
 
 def write_timeseries_csv(path: str | Path, rows: list[dict[str, float]]) -> None:
+    """Write timeseries csv."""
     path = Path(path)
     field_names = sorted(rows[0].keys()) if rows else []
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -366,6 +360,7 @@ def write_deploy_artifacts(
     config_payload: dict[str, Any],
     metrics: Any,
 ) -> dict[str, str]:
+    """Write deploy artifacts."""
     output_dir = Path(output_dir)
     artifact_paths = {
         "config": str(output_dir / "config.json"),

@@ -14,6 +14,7 @@ class RawController(BaseController):
     """Return the latest commanded joint positions directly as the action."""
 
     def act(self, obs: Any) -> Any:
+        """Compute an action."""
         parsed = parse_teleop_observation(obs)
         joint_command = parsed["leader_joint_pos"]
         if hasattr(joint_command, "clone"):

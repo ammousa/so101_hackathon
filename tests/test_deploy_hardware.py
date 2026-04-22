@@ -9,6 +9,7 @@ from so101_hackathon.deploy.hardware import _resolve_calibration_path
 
 class DeployHardwareTests(unittest.TestCase):
     def test_resolve_calibration_path_uses_exact_device_id_first(self):
+        """Verify resolve calibration path uses exact device id first."""
         with tempfile.TemporaryDirectory() as tmpdir:
             calibration_dir = Path(tmpdir)
             target = calibration_dir / "my_awesome_leader_arm.json"
@@ -19,6 +20,7 @@ class DeployHardwareTests(unittest.TestCase):
             self.assertEqual(resolved, target)
 
     def test_resolve_calibration_path_falls_back_to_common_leader_alias(self):
+        """Verify resolve calibration path falls back to common leader alias."""
         with tempfile.TemporaryDirectory() as tmpdir:
             calibration_dir = Path(tmpdir)
             target = calibration_dir / "leader.json"

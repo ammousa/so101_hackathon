@@ -21,6 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _discover_vendor_module_root() -> Path:
+    """Discover vendor module root."""
     external_root = _REPO_ROOT / "external"
     for candidate in external_root.glob("*/source/*/*"):
         if (candidate / "devices" / "lerobot").is_dir():
@@ -48,11 +49,13 @@ class _RepoSOFollowerConfig:
 
 
 def _ensure_repo_lerobot_path() -> None:
+    """Ensure repo lerobot path."""
     if str(_VENDOR_MODULE_ROOT) not in sys.path:
         sys.path.insert(0, str(_VENDOR_MODULE_ROOT))
 
 
 def _load_repo_motor_dependencies():
+    """Load repo motor dependencies."""
     _ensure_repo_lerobot_path()
     package_name = "".join(["lei", "saac"])
     errors_module = importlib.import_module(f"{package_name}.devices.lerobot.common.errors")
@@ -70,6 +73,7 @@ def _load_repo_motor_dependencies():
 
 
 def _default_motor_map(Motor, MotorNormMode):
+    """Handle default motor map."""
     return {
         "shoulder_pan": Motor(1, "sts3215", MotorNormMode.RANGE_M100_100),
         "shoulder_lift": Motor(2, "sts3215", MotorNormMode.RANGE_M100_100),
@@ -81,6 +85,7 @@ def _default_motor_map(Motor, MotorNormMode):
 
 
 def _maybe_without_gripper(values: dict[str, object], *, disable_gripper: bool) -> dict[str, object]:
+    """Handle maybe without gripper."""
     if not disable_gripper:
         return dict(values)
     filtered = dict(values)
@@ -89,10 +94,12 @@ def _maybe_without_gripper(values: dict[str, object], *, disable_gripper: bool) 
 
 
 def _with_joint_field_suffix(values: dict[str, float]) -> dict[str, float]:
+    """Handle with joint field suffix."""
     return {f"{joint_name}.pos": float(value) for joint_name, value in values.items()}
 
 
 def _resolve_calibration_path(calibration_dir: Path, device_id: str, role: str) -> Path:
+    """Resolve calibration path."""
     calibration_dir = Path(calibration_dir)
     candidate_names = [f"{device_id}.json"]
     if role == "leader":
@@ -123,6 +130,7 @@ def _resolve_calibration_path(calibration_dir: Path, device_id: str, role: str) 
 
 
 def _load_motor_calibration(calibration_dir: Path, device_id: str, role: str, MotorCalibration):
+    """Load motor calibration."""
     calibration_path = _resolve_calibration_path(calibration_dir, device_id, role)
     with calibration_path.open("r", encoding="utf-8") as handle:
         json_data = json.load(handle)
@@ -139,6 +147,7 @@ def _load_motor_calibration(calibration_dir: Path, device_id: str, role: str, Mo
 
 
 def _save_motor_calibration(calibration_path: Path, calibration: dict[str, object]) -> None:
+    """Save motor calibration."""
     calibration_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         motor_name: {
@@ -156,6 +165,7 @@ def _save_motor_calibration(calibration_path: Path, calibration: dict[str, objec
 
 class _RepoSOLeader:
     def __init__(self, cfg: _RepoSOLeaderConfig):
+        """Initialize the object."""
         (
             self._device_already_connected_error,
             self._device_not_connected_error,
@@ -177,6 +187,7 @@ class _RepoSOLeader:
         )
 
     def connect(self):
+        """Connect the device."""
         if self.bus.is_connected:
             raise self._device_already_connected_error("SO101-Leader is already connected.")
         self.bus.connect()
@@ -186,16 +197,19 @@ class _RepoSOLeader:
             self.bus.write("Operating_Mode", motor, self._OperatingMode.POSITION.value)
 
     def disconnect(self):
+        """Disconnect the device."""
         if not self.bus.is_connected:
             raise self._device_not_connected_error("SO101-Leader is not connected.")
         self.bus.disconnect()
 
     def get_action(self):
+        """Return action."""
         return _with_joint_field_suffix(self.bus.sync_read("Present_Position"))
 
 
 class _RepoSOFollower:
     def __init__(self, cfg: _RepoSOFollowerConfig):
+        """Initialize the object."""
         (
             self._device_already_connected_error,
             self._device_not_connected_error,
@@ -224,6 +238,7 @@ class _RepoSOFollower:
         )
 
     def connect(self):
+        """Connect the device."""
         if self.bus.is_connected:
             raise self._device_already_connected_error("SO101-Follower is already connected.")
         self.bus.connect()
@@ -234,14 +249,17 @@ class _RepoSOFollower:
         self.bus.enable_torque()
 
     def disconnect(self):
+        """Disconnect the device."""
         if not self.bus.is_connected:
             raise self._device_not_connected_error("SO101-Follower is not connected.")
         self.bus.disconnect()
 
     def get_observation(self):
+        """Return observation."""
         return _with_joint_field_suffix(self.bus.sync_read("Present_Position"))
 
     def send_action(self, action):
+        """Run send action."""
         for field_name, value in action.items():
             joint_name = field_name[:-4] if field_name.endswith(".pos") else field_name
             if joint_name not in self.bus.motors:
@@ -251,6 +269,7 @@ class _RepoSOFollower:
 
 
 def load_leader_follower_hardware_dependencies() -> tuple[object, object, object, object, object]:
+    """Load leader follower hardware dependencies."""
     try:
         from lerobot.robots.so_follower import SOFollower, SOFollowerConfig
         from lerobot.teleoperators.so_leader import SOLeader, SOLeaderConfig
@@ -341,6 +360,7 @@ def create_leader_follower_pair(
     SOFollower,
     SOFollowerConfig,
 ):
+    """Create leader follower pair."""
     leader_cfg = SOLeaderConfig(port=leader_port)
     leader_cfg.id = leader_id
     leader_cfg.calibration_dir = DEFAULT_CALIBRATION_DIR

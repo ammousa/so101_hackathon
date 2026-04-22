@@ -41,6 +41,7 @@ class ResidualJointPositionActionCfg(JointActionCfg):
     fixed_noise_std: float | None = None
 
     def __post_init__(self):
+        """Finalize dataclass initialization."""
         self.class_type = ResidualJointPositionAction
 
 
@@ -57,6 +58,7 @@ class AbsoluteJointPositionActionCfg(JointActionCfg):
     fixed_noise_std: float | None = None
 
     def __post_init__(self):
+        """Finalize dataclass initialization."""
         self.class_type = AbsoluteJointPositionAction
 
 
@@ -66,9 +68,11 @@ class ResidualJointPositionAction(JointAction):
     cfg: ResidualJointPositionActionCfg
 
     def __init__(self, cfg: ResidualJointPositionActionCfg, env):
+        """Initialize the object."""
         super().__init__(cfg, env)
         self._offset = 0.0
         self._applied_actions = torch.zeros_like(self.raw_actions)
+        self._controller_actions = torch.zeros_like(self.raw_actions)
         self._delay_buffer = DelayBuffer(
             cfg.max_delay, batch_size=self.num_envs, device=self.device)
         self._delay_steps = torch.zeros(
@@ -93,21 +97,31 @@ class ResidualJointPositionAction(JointAction):
 
     @property
     def applied_actions(self) -> torch.Tensor:
+        """Run applied actions."""
         return self._applied_actions
 
     @property
+    def controller_actions(self) -> torch.Tensor:
+        """Return the latest pre-disturbance controller command."""
+        return self._controller_actions
+
+    @property
     def delay_steps(self) -> torch.Tensor:
+        """Run delay steps."""
         return self._delay_steps
 
     @property
     def noise_std(self) -> torch.Tensor:
+        """Run noise std."""
         return self._noise_std
 
     def set_disturbance_ranges(self, delay_range: tuple[int, int], noise_std_range: tuple[float, float]) -> None:
+        """Set disturbance ranges."""
         self._delay_range = delay_range
         self._noise_std_range = noise_std_range
 
     def set_disturbance_override(self, delay_steps: int | None, noise_std: float | None) -> None:
+        """Set disturbance override."""
         self._fixed_delay_steps = delay_steps
         self._fixed_noise_std = noise_std
 
@@ -134,6 +148,7 @@ class ResidualJointPositionAction(JointAction):
         self._has_curriculum_disturbance[env_ids_tensor] = True
 
     def process_actions(self, actions: torch.Tensor):
+        """Run process actions."""
         super().process_actions(actions)
         command_term = self._env.command_manager.get_term(
             self.cfg.command_name)
@@ -143,8 +158,8 @@ class ResidualJointPositionAction(JointAction):
             command = self._env.command_manager.get_command(
                 self.cfg.command_name)
             target_positions = command[:, : self.action_dim]
-        delayed_commands = self._delay_buffer.compute(
-            target_positions + self.processed_actions)
+        self._controller_actions = target_positions + self.processed_actions
+        delayed_commands = self._delay_buffer.compute(self._controller_actions)
         noise = torch.randn_like(delayed_commands) * \
             self._noise_std.unsqueeze(-1) * self._noise_mask
         lower_limits = self._asset.data.soft_joint_pos_limits[:,
@@ -161,15 +176,18 @@ class ResidualJointPositionAction(JointAction):
         )
 
     def apply_actions(self):
+        """Apply actions."""
         self._asset.set_joint_position_target(
             self._applied_actions, joint_ids=self._joint_ids)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        """Reset internal state."""
         env_ids = slice(None) if env_ids is None else env_ids  # type: ignore
         env_ids_tensor = _env_ids_to_tensor(
             env_ids, self.num_envs, self.device)
         super().reset(env_ids)
         self._applied_actions[env_ids] = 0.0
+        self._controller_actions[env_ids] = 0.0
         self._delay_buffer.reset(env_ids)
         delay_steps, noise_std = resolve_disturbance_reset_values(
             batch_size=env_ids_tensor.numel(),
@@ -193,9 +211,11 @@ class AbsoluteJointPositionAction(JointAction):
     cfg: AbsoluteJointPositionActionCfg
 
     def __init__(self, cfg: AbsoluteJointPositionActionCfg, env):
+        """Initialize the object."""
         super().__init__(cfg, env)
         self._offset = 0.0
         self._applied_actions = torch.zeros_like(self.raw_actions)
+        self._controller_actions = torch.zeros_like(self.raw_actions)
         self._delay_buffer = DelayBuffer(
             cfg.max_delay, batch_size=self.num_envs, device=self.device)
         self._delay_steps = torch.zeros(
@@ -220,21 +240,31 @@ class AbsoluteJointPositionAction(JointAction):
 
     @property
     def applied_actions(self) -> torch.Tensor:
+        """Run applied actions."""
         return self._applied_actions
 
     @property
+    def controller_actions(self) -> torch.Tensor:
+        """Return the latest pre-disturbance controller command."""
+        return self._controller_actions
+
+    @property
     def delay_steps(self) -> torch.Tensor:
+        """Run delay steps."""
         return self._delay_steps
 
     @property
     def noise_std(self) -> torch.Tensor:
+        """Run noise std."""
         return self._noise_std
 
     def set_disturbance_ranges(self, delay_range: tuple[int, int], noise_std_range: tuple[float, float]) -> None:
+        """Set disturbance ranges."""
         self._delay_range = delay_range
         self._noise_std_range = noise_std_range
 
     def set_disturbance_override(self, delay_steps: int | None, noise_std: float | None) -> None:
+        """Set disturbance override."""
         self._fixed_delay_steps = delay_steps
         self._fixed_noise_std = noise_std
 
@@ -261,32 +291,36 @@ class AbsoluteJointPositionAction(JointAction):
         self._has_curriculum_disturbance[env_ids_tensor] = True
 
     def process_actions(self, actions: torch.Tensor):
+        """Run process actions."""
         super().process_actions(actions)
         lower_limits = self._asset.data.soft_joint_pos_limits[:,
                                                               self._joint_ids, 0]
         upper_limits = self._asset.data.soft_joint_pos_limits[:,
                                                               self._joint_ids, 1]
-        commanded_positions = torch.clamp(
+        self._controller_actions = torch.clamp(
             self.processed_actions,
             min=lower_limits,
             max=upper_limits,
         )
-        delayed_commands = self._delay_buffer.compute(commanded_positions)
+        delayed_commands = self._delay_buffer.compute(self._controller_actions)
         noise = torch.randn_like(delayed_commands) * \
             self._noise_std.unsqueeze(-1) * self._noise_mask
         self._applied_actions = torch.clamp(
             delayed_commands + noise, min=lower_limits, max=upper_limits)
 
     def apply_actions(self):
+        """Apply actions."""
         self._asset.set_joint_position_target(
             self._applied_actions, joint_ids=self._joint_ids)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        """Reset internal state."""
         env_ids = slice(None) if env_ids is None else env_ids  # type: ignore
         env_ids_tensor = _env_ids_to_tensor(
             env_ids, self.num_envs, self.device)
         super().reset(env_ids)
         self._applied_actions[env_ids] = 0.0
+        self._controller_actions[env_ids] = 0.0
         self._delay_buffer.reset(env_ids)
         delay_steps, noise_std = resolve_disturbance_reset_values(
             batch_size=env_ids_tensor.numel(),

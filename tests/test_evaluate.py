@@ -23,27 +23,33 @@ import scripts.evaluate as evaluate_script
 
 class FakeController(BaseController):
     def __init__(self):
+        """Initialize the object."""
         self.reset_calls = 0
         self.act_calls = 0
 
     def reset(self) -> None:
+        """Reset internal state."""
         self.reset_calls += 1
 
     def act(self, obs):
+        """Compute an action."""
         self.act_calls += 1
         return [0.0] * 6
 
 
 class FakeEnv:
     def __init__(self):
+        """Initialize the object."""
         self.step_dt = 0.0
         self.episode_step = 0
 
     def reset(self):
+        """Reset internal state."""
         self.episode_step = 0
         return [0.0] * 30
 
     def step(self, action):
+        """Step the environment."""
         del action
         self.episode_step += 1
         done = self.episode_step >= 2
@@ -65,11 +71,14 @@ class FakeEnv:
 
 
 def context_manager_with(value):
+    """Run context manager with."""
     class _ContextManager:
         def __enter__(self):
+            """Enter the context manager."""
             return value
 
         def __exit__(self, exc_type, exc, tb):
+            """Exit the context manager."""
             del exc_type, exc, tb
             return False
 
@@ -78,6 +87,7 @@ def context_manager_with(value):
 
 class EvaluateUtilsTests(unittest.TestCase):
     def test_checkpoint_run_dir_returns_checkpoint_parent(self):
+        """Verify checkpoint run dir returns checkpoint parent."""
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint = os.path.join(tmpdir, "model_100.pt")
             with open(checkpoint, "w", encoding="utf-8") as handle:
@@ -86,6 +96,7 @@ class EvaluateUtilsTests(unittest.TestCase):
             self.assertEqual(checkpoint_run_dir(checkpoint), tmpdir)
 
     def test_resolve_evaluation_output_dir_nests_under_checkpoint_run(self):
+        """Verify resolve evaluation output dir nests under checkpoint run."""
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint = os.path.join(tmpdir, "model_100.pt")
             with open(checkpoint, "w", encoding="utf-8") as handle:
@@ -102,6 +113,7 @@ class EvaluateUtilsTests(unittest.TestCase):
             self.assertEqual(output_dir, os.path.join(tmpdir, "evaluation", "2026-04-19_10-11-12"))
 
     def test_resolve_evaluation_output_dir_prefers_explicit_output_dir(self):
+        """Verify resolve evaluation output dir prefers explicit output dir."""
         resolved = resolve_evaluation_output_dir(
             controller_name="pd",
             requested_output_dir="custom/eval",
@@ -110,6 +122,7 @@ class EvaluateUtilsTests(unittest.TestCase):
         self.assertTrue(resolved.endswith(os.path.join("custom", "eval")))
 
     def test_write_evaluation_config_persists_args_and_configs(self):
+        """Verify write evaluation config persists args and configs."""
         args = argparse.Namespace(controller="pd", seed=42, num_episodes=3)
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = write_evaluation_config(
@@ -126,6 +139,7 @@ class EvaluateUtilsTests(unittest.TestCase):
         self.assertIn('"kp": 0.5', payload)
 
     def test_build_and_write_summary_json(self):
+        """Verify build and write summary json."""
         result = mock.Mock(metrics={"eval/joint_rmse": 0.12}, num_steps=17)
         with tempfile.TemporaryDirectory() as tmpdir:
             video_dir = os.path.join(tmpdir, "videos")
@@ -151,6 +165,7 @@ class EvaluateUtilsTests(unittest.TestCase):
         self.assertIn('"video"', summary)
 
     def test_log_evaluation_metrics_writes_tensorboard_scalars(self):
+        """Verify log evaluation metrics writes tensorboard scalars."""
         summary_writer = mock.Mock()
         tensorboard_module = mock.Mock(SummaryWriter=mock.Mock(return_value=summary_writer))
         result = mock.Mock(metrics={"eval/joint_rmse": 0.12}, num_steps=17)
@@ -172,6 +187,7 @@ class EvaluateUtilsTests(unittest.TestCase):
 
 class EvaluateScriptTests(unittest.TestCase):
     def test_parser_exposes_single_checkpoint_path_argument(self):
+        """Verify parser exposes single checkpoint path argument."""
         parser = evaluate_script.build_parser()
         args = parser.parse_args(["--checkpoint-path", "/tmp/model.pt"])
 
@@ -182,6 +198,7 @@ class EvaluateScriptTests(unittest.TestCase):
 
 class EvaluateControllerTests(unittest.TestCase):
     def test_evaluate_controller_runs_multiple_episodes(self):
+        """Verify evaluate controller runs multiple episodes."""
         env = FakeEnv()
         controller = FakeController()
 
@@ -196,6 +213,7 @@ class EvaluateControllerTests(unittest.TestCase):
         self.assertEqual(result.metrics["eval/num_episodes"], 2.0)
 
     def test_progress_bar_updates_per_step(self):
+        """Verify progress bar updates per step."""
         env = FakeEnv()
         controller = FakeController()
         progress = mock.Mock()

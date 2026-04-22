@@ -7,6 +7,7 @@ from so101_hackathon.deploy.metrics import DeployMetricAccumulator
 
 class DeployMetricAccumulatorTests(unittest.TestCase):
     def test_update_and_summary_accumulate_expected_values(self):
+        """Verify update and summary accumulate expected values."""
         metrics = DeployMetricAccumulator()
 
         metrics.update(
@@ -35,6 +36,7 @@ class DeployMetricAccumulatorTests(unittest.TestCase):
         self.assertEqual(len(metrics.timeseries_rows()), 2)
 
     def test_formatters_return_readable_strings(self):
+        """Verify formatters return readable strings."""
         metrics = DeployMetricAccumulator()
         metrics.update(
             step=0,

@@ -27,15 +27,22 @@ from so101_hackathon.deploy.runtime import (
     FixedDisturbanceChannel,
 )
 from so101_hackathon.registry import create_controller, list_controller_names
-from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES, clamp_action
+from so101_hackathon.utils.rl_utils import (
+    TELEOP_JOINT_NAMES,
+    TELEOP_RESIDUAL_ACTION_SCALE,
+    clamp_action,
+    finite_difference_velocity,
+)
 
 _FRONT_VIEWPORT_WINDOW = "Front"
 _TOP_VIEWPORT_WINDOW = "Top"
 _WRIST_VIEWPORT_WINDOW = "Wrist"
-DEFAULT_CALIBRATION_DIR = Path.home() / ".cache" / "huggingface" / "lerobot" / "calibration"
+DEFAULT_CALIBRATION_DIR = Path.home() / ".cache" / "huggingface" / \
+    "lerobot" / "calibration"
 
 
 def _discover_vendor_module_root() -> Path:
+    """Discover vendor module root."""
     external_root = REPO_ROOT / "external"
     for candidate in external_root.glob("*/source/*/*"):
         if (candidate / "devices" / "lerobot").is_dir():
@@ -45,6 +52,7 @@ def _discover_vendor_module_root() -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Teleoperate the PickOrange kitchen environment with an SO101 leader arm.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -114,12 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _remove_cached_leader_calibration(leader_id: str) -> None:
+    """Remove cached leader calibration."""
     calibration_path = DEFAULT_CALIBRATION_DIR / f"{leader_id}.json"
     if calibration_path.exists():
         calibration_path.unlink()
 
 
 def build_pick_orange_env_cfg(args: argparse.Namespace):
+    """Build pick orange env cfg."""
     from so101_hackathon.envs.pick_orange_env import build_pick_orange_env_cfg as _build_pick_orange_env_cfg
 
     return _build_pick_orange_env_cfg(
@@ -131,10 +141,12 @@ def build_pick_orange_env_cfg(args: argparse.Namespace):
 
 
 def build_controller_config(args: argparse.Namespace, *, seed: int | None = None) -> dict[str, Any]:
+    """Build controller config."""
     controller_config = load_yaml(args.controller_config)
     controller_config.setdefault("device", args.device)
     controller_config.setdefault(
-        "seed", int(seed if seed is not None else (args.seed if args.seed is not None else 42))
+        "seed", int(seed if seed is not None else (
+            args.seed if args.seed is not None else 42))
     )
     if args.checkpoint_path is not None:
         controller_config["checkpoint_path"] = args.checkpoint_path
@@ -146,11 +158,13 @@ class RateLimiter:
     hz: int
 
     def __post_init__(self) -> None:
+        """Finalize dataclass initialization."""
         self.last_time = time.time()
         self.sleep_duration = 1.0 / max(int(self.hz), 1)
         self.render_period = min(0.0166, self.sleep_duration)
 
     def sleep(self, env) -> None:
+        """Sleep until the next control tick."""
         next_wakeup_time = self.last_time + self.sleep_duration
         while time.time() < next_wakeup_time:
             time.sleep(self.render_period)
@@ -162,6 +176,7 @@ class RateLimiter:
 
 class KeyboardTeleopState:
     def __init__(self) -> None:
+        """Initialize the object."""
         import carb
         import omni
 
@@ -186,12 +201,14 @@ class KeyboardTeleopState:
             self._keyboard, self._on_keyboard_event)
 
     def close(self) -> None:
+        """Close owned resources."""
         if getattr(self, "_keyboard_sub", None) is not None and self._input is not None:
             self._input.unsubscribe_to_keyboard_events(
                 self._keyboard, self._keyboard_sub)
             self._keyboard_sub = None
 
     def _on_keyboard_event(self, event, *args):
+        """Handle on keyboard event."""
         if event.type == self._carb.input.KeyboardEventType.KEY_PRESS:
             if event.input.name == "B":
                 self.started = True
@@ -208,11 +225,13 @@ class KeyboardTeleopState:
         return True
 
     def pop_reset_requested(self) -> bool:
+        """Run pop reset requested."""
         requested = self._reset_requested
         self._reset_requested = False
         return requested
 
     def pop_success_requested(self) -> bool:
+        """Run pop success requested."""
         requested = self._success_requested
         self._success_requested = False
         return requested
@@ -220,6 +239,7 @@ class KeyboardTeleopState:
 
 class SO101LeaderTeleop:
     def __init__(self, env, *, port: str, recalibrate: bool) -> None:
+        """Initialize the object."""
         leader_id = DEFAULT_LEADER_ID
         self._env = env
         self._leader = None
@@ -257,20 +277,24 @@ class SO101LeaderTeleop:
             self._keyboard = KeyboardTeleopState()
 
     def _request_reset(self) -> None:
+        """Handle request reset."""
         self._reset_requested = True
         self._success_requested = False
 
     def _request_success(self) -> None:
+        """Handle request success."""
         self._reset_requested = True
         self._success_requested = True
 
     def close(self) -> None:
+        """Close owned resources."""
         if self._keyboard is not None:
             self._keyboard.close()
         if hasattr(self._leader, "disconnect"):
             self._leader.disconnect()
 
     def display_controls(self) -> None:
+        """Display controls."""
         if self._leader_api == "vendor" and hasattr(self._leader, "display_controls"):
             self._leader.display_controls()
             return
@@ -281,12 +305,14 @@ class SO101LeaderTeleop:
         print("  Ctrl+C: quit")
 
     def reset(self) -> None:
+        """Reset internal state."""
         self._reset_requested = False
         self._success_requested = False
         if hasattr(self._leader, "reset"):
             self._leader.reset()
 
     def pop_reset_requested(self) -> bool:
+        """Run pop reset requested."""
         if self._leader_api == "vendor":
             requested = self._reset_requested
             self._reset_requested = False
@@ -294,6 +320,7 @@ class SO101LeaderTeleop:
         return self._keyboard.pop_reset_requested()
 
     def pop_success_requested(self) -> bool:
+        """Run pop success requested."""
         if self._leader_api == "vendor":
             requested = self._success_requested
             self._success_requested = False
@@ -301,6 +328,7 @@ class SO101LeaderTeleop:
         return self._keyboard.pop_success_requested()
 
     def advance(self):
+        """Advance the teleoperation device."""
         if self._leader_api == "vendor":
             if not getattr(self._leader, "started", False):
                 return None
@@ -323,10 +351,12 @@ class SO101LeaderTeleop:
 
 
 def _is_tensor(values: Any) -> bool:
+    """Return whether tensor."""
     return hasattr(values, "shape") and hasattr(values, "device") and hasattr(values, "dtype")
 
 
 def _clone_action(values: Any) -> Any:
+    """Handle clone action."""
     if _is_tensor(values):
         return values.clone()
     if isinstance(values, list):
@@ -335,12 +365,14 @@ def _clone_action(values: Any) -> Any:
 
 
 def _zeros_like_action(values: Any) -> Any:
+    """Handle zeros like action."""
     if _is_tensor(values):
         return values.new_zeros(values.shape)
     return [0.0 for _ in values]
 
 
 def _as_action_like(values: Any, reference: Any) -> Any:
+    """Handle as action like."""
     if _is_tensor(reference):
         if _is_tensor(values):
             action = values.to(device=reference.device, dtype=reference.dtype)
@@ -366,6 +398,7 @@ def adapt_controller_action(
     controller: Any,
     controller_coeff: float,
 ) -> Any:
+    """Run adapt controller action."""
     coeff = float(controller_coeff)
     if coeff < 0.0 or coeff > 1.0:
         raise ValueError(
@@ -376,10 +409,10 @@ def adapt_controller_action(
             clamp_action(controller_action, limit=1.0), leader_action)
         if not _is_tensor(leader_action):
             return [
-                float(leader_value) + coeff * float(residual_value)
+                float(leader_value) + coeff * TELEOP_RESIDUAL_ACTION_SCALE * float(residual_value)
                 for leader_value, residual_value in zip(leader_action, residual_action)
             ]
-        return leader_action + coeff * residual_action
+        return leader_action + coeff * TELEOP_RESIDUAL_ACTION_SCALE * residual_action
 
     absolute_action = _as_action_like(controller_action, leader_action)
     if not _is_tensor(leader_action):
@@ -392,6 +425,7 @@ def adapt_controller_action(
 
 
 def read_follower_joint_positions(env):
+    """Read follower joint positions."""
     robot = env.scene["robot"]
     joint_ids, _ = robot.find_joints(
         list(TELEOP_JOINT_NAMES), preserve_order=True)
@@ -399,6 +433,7 @@ def read_follower_joint_positions(env):
 
 
 def clamp_sim_joint_positions(actions, env):
+    """Clamp sim joint positions."""
     try:
         robot = env.scene["robot"]
         joint_ids, _ = robot.find_joints(
@@ -412,19 +447,23 @@ def clamp_sim_joint_positions(actions, env):
 
 class SimTeleopObservationBuilder:
     def __init__(self) -> None:
+        """Initialize the object."""
         self._previous_leader_joint_pos = None
         self._previous_joint_error = None
         self._previous_action = None
 
     def reset(self) -> None:
+        """Reset internal state."""
         self._previous_leader_joint_pos = None
         self._previous_joint_error = None
         self._previous_action = None
 
     def set_previous_action(self, action) -> None:
+        """Set previous action."""
         self._previous_action = _clone_action(action)
 
     def build(self, *, leader_joint_pos, follower_joint_pos, dt: float):
+        """Build the observation."""
         dt = max(float(dt), 1.0e-6)
         if _is_tensor(leader_joint_pos):
             joint_error = leader_joint_pos - follower_joint_pos
@@ -443,21 +482,19 @@ class SimTeleopObservationBuilder:
                 self._previous_leader_joint_pos, leader_joint_pos)
             previous_error = _as_action_like(
                 self._previous_joint_error, joint_error)
-            leader_joint_vel = ((leader_joint_pos - previous_leader) / dt).clamp(max=100)
-            joint_error_vel = (joint_error - previous_error) / dt
+            leader_joint_vel = finite_difference_velocity(
+                leader_joint_pos, previous_leader, dt)
+            joint_error_vel = finite_difference_velocity(
+                joint_error, previous_error, dt)
         else:
             previous_leader = _as_action_like(
                 self._previous_leader_joint_pos, leader_joint_pos)
             previous_error = _as_action_like(
                 self._previous_joint_error, joint_error)
-            leader_joint_vel = [
-                min((float(current) - float(previous)) / dt, 100.0)
-                for current, previous in zip(leader_joint_pos, previous_leader)
-            ]
-            joint_error_vel = [
-                (float(current) - float(previous)) / dt
-                for current, previous in zip(joint_error, previous_error)
-            ]
+            leader_joint_vel = finite_difference_velocity(
+                leader_joint_pos, previous_leader, dt)
+            joint_error_vel = finite_difference_velocity(
+                joint_error, previous_error, dt)
 
         previous_action = (
             _zeros_like_action(leader_joint_pos)
@@ -491,6 +528,7 @@ class SimTeleopObservationBuilder:
 
 
 def apply_action_disturbance(actions, channel: FixedDisturbanceChannel):
+    """Apply action disturbance."""
     disturbed_command = channel.apply(actions[0].detach().cpu().tolist())
     disturbed_actions = actions.clone()
     disturbed_actions[:, :] = actions.new_tensor(disturbed_command)
@@ -499,15 +537,18 @@ def apply_action_disturbance(actions, channel: FixedDisturbanceChannel):
 
 class ViewportLayoutManager:
     def __init__(self) -> None:
+        """Initialize the object."""
         self._windows = []
 
     def _pump_ui(self, env, num_frames: int = 4) -> None:
+        """Handle pump ui."""
         for _ in range(num_frames):
             env.render()
             env.sim.render()
             time.sleep(0.01)
 
     def _bind_camera(self, window_name: str, camera_prim_path: str) -> None:
+        """Handle bind camera."""
         from omni.kit.viewport.utility import get_viewport_from_window_name
 
         viewport_api = get_viewport_from_window_name(window_name)
@@ -515,6 +556,7 @@ class ViewportLayoutManager:
             viewport_api.camera_path = camera_prim_path
 
     def configure(self, env) -> None:
+        """Run configure."""
         import omni.ui as ui
         from omni.kit.viewport.window import ViewportWindow
 
@@ -554,6 +596,7 @@ class ViewportLayoutManager:
         self._pump_ui(env, 4)
 
     def close(self) -> None:
+        """Close owned resources."""
         for window in self._windows:
             try:
                 window.destroy()
@@ -563,6 +606,7 @@ class ViewportLayoutManager:
 
 
 def manual_terminate(env, success: bool):
+    """Run manual terminate."""
     import torch
     from isaaclab.managers import TerminationTermCfg
 
@@ -582,6 +626,7 @@ def manual_terminate(env, success: bool):
 
 
 def _launch_app(args: argparse.Namespace):
+    """Launch app."""
     from isaaclab.app import AppLauncher
 
     app_launcher = AppLauncher(vars(args))
@@ -589,6 +634,7 @@ def _launch_app(args: argparse.Namespace):
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
 
     simulation_app = _launch_app(args)
@@ -597,7 +643,8 @@ def main(argv: list[str] | None = None) -> int:
     env_cfg = build_pick_orange_env_cfg(args)
     env = PickOrangeEnvBuilder().make_direct_env(
         env_cfg=env_cfg,
-        render_mode="rgb_array" if getattr(args, "enable_cameras", False) else None,
+        render_mode="rgb_array" if getattr(
+            args, "enable_cameras", False) else None,
     ).unwrapped
     controller_config = build_controller_config(args, seed=env_cfg.seed)
     controller = create_controller(
@@ -632,6 +679,7 @@ def main(argv: list[str] | None = None) -> int:
     interrupted = False
 
     def signal_handler(signum, frame):
+        """Handle shutdown signals."""
         del signum, frame
         nonlocal interrupted
         interrupted = True
@@ -676,16 +724,16 @@ def main(argv: list[str] | None = None) -> int:
                     dt=1.0 / max(int(args.step_hz), 1),
                 )
                 controller_actions = controller.act(controller_obs)
-                actions = adapt_controller_action(
+                controller_decided_actions = adapt_controller_action(
                     leader_action=leader_actions,
                     controller_action=controller_actions,
                     controller=controller,
                     controller_coeff=float(args.controller_coeff),
                 )
                 actions = clamp_sim_joint_positions(
-                    apply_action_disturbance(actions, disturbance_channel), env)
+                    apply_action_disturbance(controller_decided_actions, disturbance_channel), env)
                 env.step(actions)
-                observation_builder.set_previous_action(actions)
+                observation_builder.set_previous_action(controller_decided_actions)
             rate_limiter.sleep(env)
     finally:
         signal.signal(signal.SIGINT, original_sigint_handler)

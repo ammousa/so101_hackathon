@@ -21,6 +21,7 @@ from so101_hackathon.sim.robots.so101_follower_spec import SO101_JOINT_NAMES
 
 TELEOP_JOINT_NAMES: tuple[str, ...] = SO101_JOINT_NAMES
 TELEOP_HISTORY_LENGTH = 1
+TELEOP_VELOCITY_LIMIT = 100.0
 TELEOP_TERM_ORDER: tuple[str, ...] = (
     "leader_joint_pos",
     "leader_joint_vel",
@@ -31,6 +32,7 @@ TELEOP_TERM_ORDER: tuple[str, ...] = (
 
 
 def _slice_values(values: Any, start: int, stop: int) -> Any:
+    """Handle slice values."""
     if isinstance(values, list):
         if values and isinstance(values[0], list):
             return [row[start:stop] for row in values]
@@ -39,6 +41,7 @@ def _slice_values(values: Any, start: int, stop: int) -> Any:
 
 
 def _vector_length(values: Any) -> int:
+    """Handle vector length."""
     shape = getattr(values, "shape", None)
     if shape is not None and len(shape) > 0:
         return int(shape[-1])
@@ -61,6 +64,24 @@ def _unwrap_policy_observation(obs: Any) -> Any:
         if len(obs) == 1:
             return next(iter(obs.values()))
     return obs
+
+
+def finite_difference_velocity(
+    current: Any,
+    previous: Any,
+    dt: float,
+    *,
+    limit: float = TELEOP_VELOCITY_LIMIT,
+) -> Any:
+    """Compute a clipped finite-difference velocity."""
+    safe_dt = max(float(dt), 1.0e-6)
+    bound = float(limit)
+    if hasattr(current, "shape") and hasattr(current, "dtype") and hasattr(current, "device"):
+        return ((current - previous) / safe_dt).clamp(min=-bound, max=bound)
+    return [
+        max(-bound, min(bound, (float(current_value) - float(previous_value)) / safe_dt))
+        for current_value, previous_value in zip(current, previous)
+    ]
 
 
 def parse_teleop_observation(

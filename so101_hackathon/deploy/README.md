@@ -42,7 +42,7 @@ Use the repo-local calibration script before the first deploy or after changing 
 Calibrate the leader:
 
 ```bash
-python scripts/calibrate_hardware.py \
+python scripts/deploy/calibrate_hardware.py \
   --role leader \
   --port /dev/ttyACM1 \
   --id my_awesome_leader_arm
@@ -51,7 +51,7 @@ python scripts/calibrate_hardware.py \
 Calibrate the follower:
 
 ```bash
-python scripts/calibrate_hardware.py \
+python scripts/deploy/calibrate_hardware.py \
   --role follower \
   --port /dev/ttyACM0 \
   --id my_awesome_follower_arm

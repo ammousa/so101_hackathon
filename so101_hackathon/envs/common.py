@@ -44,6 +44,7 @@ class BaseHackathonEnvBuilder:
     """Base builder that centralizes Isaac stack checks and app launch."""
 
     def require_isaac_stack(self) -> None:
+        """Run require isaac stack."""
         missing = []
         for module_name in ("isaaclab", "gymnasium", "isaaclab_rl"):
             try:
@@ -57,6 +58,7 @@ class BaseHackathonEnvBuilder:
             )
 
     def build_env_cfg(self, **kwargs: Any) -> Any:
+        """Build env cfg."""
         raise NotImplementedError
 
     def make_env(
@@ -70,6 +72,7 @@ class BaseHackathonEnvBuilder:
         video_length: int = 600,
         wrap_for_rl: bool = False,
     ) -> Any:
+        """Create env."""
         self.require_isaac_stack()
 
         import gymnasium as gym
@@ -118,6 +121,7 @@ class BaseHackathonEnvBuilder:
         wrap_for_rl: bool = False,
         **build_kwargs: Any,
     ) -> TeleopEnvLaunch:
+        """Launch and make env."""
         self.require_isaac_stack()
 
         import argparse
@@ -154,12 +158,20 @@ class BaseHackathonEnvBuilder:
 
 
 def dynamic_reset_gripper_effort_limit_sim(env, teleop_device: str) -> None:
+    """Run dynamic reset gripper effort limit sim."""
     if teleop_device != "so101leader":
         return
     write_gripper_effort_limit_sim(env, env.scene["robot"])
 
 
 def write_gripper_effort_limit_sim(env, env_arm) -> None:
+    """Write gripper effort limit sim."""
+    try:
+        import torch
+    except ModuleNotFoundError as exc:  # pragma: no cover - runtime environment specific
+        raise RuntimeError(
+            "Runtime gripper effort updates require `torch`.") from exc
+
     gripper_pos = env_arm.data.body_link_pos_w[:, -1]
 
     object_positions = []
@@ -194,6 +206,7 @@ def ee_frame_state(
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
+    """Run ee frame state."""
     robot = env.scene[robot_cfg.name]
     robot_root_pos, robot_root_quat = robot.data.root_pos_w, robot.data.root_quat_w
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
@@ -206,11 +219,13 @@ def ee_frame_state(
 
 
 def joint_pos_target(env: ManagerBasedEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Run joint pos target."""
     asset: Articulation = env.scene[asset_cfg.name]
     return asset.data.joint_pos_target[:, asset_cfg.joint_ids]
 
 
 def init_single_arm_action_cfg(action_cfg, teleop_device: str):
+    """Initialize single arm action cfg."""
     if teleop_device != "so101leader":
         raise ValueError(
             f"Unsupported teleop device `{teleop_device}`. Only `so101leader` is supported.")
@@ -235,6 +250,7 @@ def init_single_arm_action_cfg(action_cfg, teleop_device: str):
 
 
 def preprocess_single_arm_device_action(action: dict[str, Any], *, num_envs: int, device: torch.device) -> torch.Tensor:
+    """Preprocess single arm device action."""
     if not action.get("so101_leader"):
         raise NotImplementedError(
             "Only SO101 leader teleop actions are supported.")
@@ -250,6 +266,7 @@ def preprocess_single_arm_device_action(action: dict[str, Any], *, num_envs: int
 
 
 def normalize_joint_state(joint_state: dict[str, Any]) -> dict[str, float]:
+    """Normalize joint state."""
     normalized: dict[str, float] = {}
     for joint_name in SO101_JOINT_NAMES:
         if joint_name in joint_state:
@@ -267,6 +284,7 @@ def normalize_joint_state(joint_state: dict[str, Any]) -> dict[str, float]:
 
 
 def is_so101_at_rest_pose(joint_pos: torch.Tensor, joint_names: list[str]) -> torch.Tensor:
+    """Return whether so101 at rest pose."""
     is_reset = torch.ones(
         joint_pos.shape[0], dtype=torch.bool, device=joint_pos.device)
     joint_pos_deg = joint_pos / torch.pi * 180.0
@@ -281,6 +299,7 @@ def is_so101_at_rest_pose(joint_pos: torch.Tensor, joint_names: list[str]) -> to
 
 
 def _require_pxr():
+    """Handle require pxr."""
     try:
         from pxr import Usd, UsdGeom, UsdPhysics
     except ModuleNotFoundError as exc:  # pragma: no cover - requires Isaac runtime
@@ -290,11 +309,13 @@ def _require_pxr():
 
 
 def get_stage(usd_path):
+    """Return stage."""
     Usd, _, _ = _require_pxr()
     return Usd.Stage.Open(usd_path)
 
 
 def get_all_prims(stage, prim=None, prims_list=None):
+    """Return all prims."""
     if prims_list is None:
         prims_list = []
     if prim is None:
@@ -306,6 +327,7 @@ def get_all_prims(stage, prim=None, prims_list=None):
 
 
 def get_prim_pos_rot(prim):
+    """Return prim pos rot."""
     Usd, UsdGeom, _ = _require_pxr()
     xformable = UsdGeom.Xformable(prim)
     if not xformable:
@@ -322,20 +344,24 @@ def get_prim_pos_rot(prim):
 
 
 def _is_articulation_root(prim):
+    """Return whether articulation root."""
     _, _, UsdPhysics = _require_pxr()
     return prim.HasAPI(UsdPhysics.ArticulationRootAPI)
 
 
 def _is_rigidbody(prim):
+    """Return whether rigidbody."""
     _, _, UsdPhysics = _require_pxr()
     return prim.HasAPI(UsdPhysics.RigidBodyAPI)
 
 
 def _get_articulation_joints(articulation_prim):
+    """Return articulation joints."""
     _, _, UsdPhysics = _require_pxr()
     joints = []
 
     def recurse(prim):
+        """Run recurse."""
         if UsdPhysics.Joint(prim):
             joints.append(prim)
         for child in prim.GetChildren():
@@ -346,15 +372,18 @@ def _get_articulation_joints(articulation_prim):
 
 
 def _is_fixed_joint(prim):
+    """Return whether fixed joint."""
     return prim.GetTypeName() == "PhysicsFixedJoint"
 
 
 def _get_all_joints_without_fixed(articulation_prim):
+    """Return all joints without fixed."""
     joints = _get_articulation_joints(articulation_prim)
     return [joint for joint in joints if not _is_fixed_joint(joint)]
 
 
 def _match_specific_name(prim_path, specific_name_list, exclude_name_list):
+    """Handle match specific name."""
     match_specific = True if specific_name_list is None else any(
         name in prim_path for name in specific_name_list)
     match_exclude = False if exclude_name_list is None else any(
@@ -363,6 +392,7 @@ def _match_specific_name(prim_path, specific_name_list, exclude_name_list):
 
 
 def parse_usd_and_create_subassets(usd_path, env_cfg, specific_name_list=None, exclude_name_list=None):
+    """Parse usd and create subassets."""
     import isaacsim.core.utils.prims as prim_utils
     from isaaclab.assets.articulation import ArticulationCfg
     from isaaclab.assets.rigid_object import RigidObjectCfg
@@ -371,6 +401,7 @@ def parse_usd_and_create_subassets(usd_path, env_cfg, specific_name_list=None, e
 
     @clone
     def spawn_from_prim_path(prim_path, spawn, translation, orientation):
+        """Run spawn from prim path."""
         return prim_utils.get_prim_at_path(prim_path)
 
     stage = get_stage(usd_path)
@@ -576,6 +607,7 @@ class SingleArmObservationsCfg:
                                    "asset_cfg": SceneEntityCfg("robot")})
 
         def __post_init__(self):
+            """Finalize dataclass initialization."""
             self.enable_corruption = True
             self.concatenate_terms = False
 
@@ -605,6 +637,7 @@ class SingleArmTaskEnvCfg(ManagerBasedRLEnvCfg):
     task_description: str = MISSING
 
     def __post_init__(self) -> None:
+        """Finalize dataclass initialization."""
         super().__post_init__()
         self.decimation = 1
         self.episode_length_s = 25.0
@@ -617,8 +650,10 @@ class SingleArmTaskEnvCfg(ManagerBasedRLEnvCfg):
             0.05, 0.05, 0.05)
 
     def use_teleop_device(self, teleop_device: str) -> None:
+        """Run use teleop device."""
         self.task_type = teleop_device
         self.actions = init_single_arm_action_cfg(self.actions, teleop_device)
 
     def preprocess_device_action(self, action: dict[str, Any]) -> torch.Tensor:
+        """Preprocess device action."""
         return preprocess_single_arm_device_action(action, num_envs=self.scene.num_envs, device=self.sim.device)

@@ -8,6 +8,7 @@ from so101_hackathon.utils.eval_metrics import TeleopMetricAccumulator
 
 class TeleopMetricAccumulatorTests(unittest.TestCase):
     def test_summary_is_zero_before_any_episodes_finish(self):
+        """Verify summary is zero before any episodes finish."""
         metrics = TeleopMetricAccumulator()
 
         summary = metrics.summary()
@@ -17,12 +18,14 @@ class TeleopMetricAccumulatorTests(unittest.TestCase):
         self.assertEqual(summary["eval/num_episodes"], 0.0)
 
     def test_add_step_rejects_wrong_joint_count(self):
+        """Verify add step rejects wrong joint count."""
         metrics = TeleopMetricAccumulator(joint_count=6)
 
         with self.assertRaises(ValueError):
             metrics.add_step(joint_error=[0.1] * 5, action_rate=0.0)
 
     def test_finish_episode_and_summary_average_metrics(self):
+        """Verify finish episode and summary average metrics."""
         metrics = TeleopMetricAccumulator(failure_threshold=0.5)
         metrics.reset_episode()
         metrics.add_step(

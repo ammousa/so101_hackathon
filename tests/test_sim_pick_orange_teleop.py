@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import scripts.deploy.sim_pick_orange.teleop as teleop_script
+from so101_hackathon.utils.rl_utils import TELEOP_RESIDUAL_ACTION_SCALE
 
 
 class _AbsoluteController:
@@ -23,6 +24,7 @@ class _ResidualController:
 
 class SimPickOrangeTeleopTests(unittest.TestCase):
     def test_parser_help_exposes_controller_options(self):
+        """Verify parser help exposes controller options."""
         parser = teleop_script.build_parser()
 
         help_text = parser.format_help()
@@ -36,6 +38,7 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertEqual(args.controller_coeff, 0.25)
 
     def test_build_controller_config_forwards_runtime_defaults(self):
+        """Verify build controller config forwards runtime defaults."""
         args = argparse.Namespace(
             controller_config=None,
             device="cpu",
@@ -50,6 +53,7 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertEqual(config["checkpoint_path"], "/tmp/model.pt")
 
     def test_build_controller_config_preserves_yaml_overrides(self):
+        """Verify build controller config preserves yaml overrides."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "controller.yaml"
             config_path.write_text(
@@ -68,6 +72,7 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertEqual(config["seed"], 123)
 
     def test_absolute_controller_action_blends_toward_controller_output(self):
+        """Verify absolute controller action blends toward controller output."""
         action = teleop_script.adapt_controller_action(
             leader_action=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             controller_action=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
@@ -78,6 +83,7 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertEqual(action, [0.25, 0.5, 0.75, 1.0, 1.25, 1.5])
 
     def test_residual_controller_action_adds_clamped_residual(self):
+        """Verify residual controller action adds clamped residual."""
         action = teleop_script.adapt_controller_action(
             leader_action=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             controller_action=[2.0, -2.0, 0.5, 0.0, 1.0, -1.0],
@@ -85,9 +91,20 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
             controller_coeff=0.5,
         )
 
-        self.assertEqual(action, [1.5, 0.5, 1.25, 1.0, 1.5, 0.5])
+        self.assertEqual(
+            action,
+            [
+                1.0 + 0.5 * TELEOP_RESIDUAL_ACTION_SCALE,
+                1.0 - 0.5 * TELEOP_RESIDUAL_ACTION_SCALE,
+                1.0 + 0.25 * TELEOP_RESIDUAL_ACTION_SCALE,
+                1.0,
+                1.0 + 0.5 * TELEOP_RESIDUAL_ACTION_SCALE,
+                1.0 - 0.5 * TELEOP_RESIDUAL_ACTION_SCALE,
+            ],
+        )
 
     def test_sim_observation_builder_produces_flat_teleop_layout(self):
+        """Verify sim observation builder produces flat teleop layout."""
         builder = teleop_script.SimTeleopObservationBuilder()
 
         obs = builder.build(
@@ -101,6 +118,11 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
             follower_joint_pos=[0.5, 1.5, 2.5, 3.5, 4.5, 5.5],
             dt=0.5,
         )
+        negative_obs = builder.build(
+            leader_joint_pos=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            follower_joint_pos=[0.5, 1.5, 2.5, 3.5, 4.5, 5.5],
+            dt=0.5,
+        )
 
         self.assertEqual(len(obs), 30)
         self.assertEqual(obs[6:12], [0.0] * 6)
@@ -108,8 +130,10 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertEqual(obs[24:30], [0.0] * 6)
         self.assertEqual(next_obs[6:12], [100.0] * 6)
         self.assertEqual(next_obs[24:30], [9.0, 8.0, 7.0, 6.0, 5.0, 4.0])
+        self.assertEqual(negative_obs[6:12], [-100.0] * 6)
 
     def test_tensor_observation_and_residual_action_match_sim_shapes(self):
+        """Verify tensor observation and residual action match sim shapes."""
         try:
             import torch
         except ModuleNotFoundError:
@@ -140,10 +164,11 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertTrue(torch.allclose(next_obs[:, 6:12], torch.full_like(leader, 100.0)))
         self.assertTrue(torch.allclose(
             action,
-            torch.tensor([[1.5, 0.5, 1.25, 1.0, 1.5, 0.5]]),
+            torch.tensor([[1.125, 0.875, 1.0625, 1.0, 1.125, 0.875]]),
         ))
 
     def test_keyboard_state_starts_immediately_when_app_window_is_missing(self):
+        """Verify keyboard state starts immediately when app window is missing."""
         fake_carb = types.SimpleNamespace(
             input=types.SimpleNamespace(
                 acquire_input_interface=mock.Mock(),

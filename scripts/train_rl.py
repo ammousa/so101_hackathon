@@ -18,6 +18,7 @@ from so101_hackathon.rl_training.ppo_config import build_teleop_ppo_runner_cfg
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Train the SO101 teleop PPO baseline.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -110,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
     args.device, _ = normalize_device_for_runtime(
         requested_device=args.device, wants_video=False)

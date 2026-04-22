@@ -8,6 +8,7 @@ __all__ = ["SO101_FOLLOWER_CFG", "SO101_JOINT_NAMES"]
 
 
 def __getattr__(name: str):
+    """Resolve dynamic module attributes."""
     if name == "SO101_FOLLOWER_CFG":  # pragma: no cover - depends on Isaac Lab runtime
         from .so101_follower_cfg import SO101_FOLLOWER_CFG
 

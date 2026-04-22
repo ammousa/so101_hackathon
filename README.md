@@ -88,10 +88,6 @@ python scripts/evaluate.py --controller raw --headless --video
 
 The recorded video is saved under `logs/raw/evaluation/<timestamp>/videos/`.
 
-#### The orange pick‑and‑place task (coming soon)
-
-The same `evaluate.py` script will soon support the kitchen `PickOrange` task. For now, use the dedicated teleop script (see [Real robot deployment](#real-robot-deployment) section).
-
 ---
 
 ### Rule‑based controllers: PD baseline
@@ -114,7 +110,7 @@ The observation is the same robot state used during deployment; the action is a 
 
 #### Train a new policy
 ```bash
-python scripts/train_rl.py --headless --num-envs 16 --max-iterations 2000
+python scripts/train_rl.py --headless
 ```
 
 Training logs and checkpoints are saved under `logs/rsl_rl/<experiment-name>/`.
@@ -164,30 +160,21 @@ python scripts/deploy/sim_pick_orange/teleop.py \
   --enable_cameras
 ```
 
-PickOrange teleop arguments:
+Key args:
 
-- `--controller`: registered controller name. Built-ins are `raw`, `pd`, and `ppo`; default is `raw`.
-- `--controller-config`: optional YAML file with controller-specific settings.
-- `--checkpoint-path`: checkpoint path forwarded to learned controllers such as `ppo`.
-- `--controller-coeff`: blend between direct leader teleop and controller output. `0.0` is pure leader teleop; `1.0` is full controller output.
-- `--teleop_device`: teleop device name. Only `so101leader` is currently supported.
-- `--port`: serial port for the SO101 leader arm.
-- `--num_envs`: number of parallel PickOrange environments. Interactive teleop normally uses `1`.
-- `--seed`: optional environment seed.
-- `--step_hz`: target simulation control frequency.
-- `--delay-steps`: fixed post-controller command delay in control steps.
-- `--noise-std`: Gaussian joint-space command noise standard deviation in radians for joints 1-4 only. Delay still applies to all joints.
-- `--recalibrate`: delete the cached leader calibration before connecting.
-- `--device`: Torch/Isaac device string, for example `cuda`, `cuda:0`, or `cpu`.
-- `--enable_cameras`: enable RGB camera rendering.
-- `--headless`: run without the viewer.
+- `--controller`: `raw`, `pd`, `ppo`
+- `--checkpoint-path`: for learned controllers
+- `--controller-coeff`: blend teleop vs controller
+- `--num_envs`: parallel envs (use `1` for teleop)
+- `--device`: `cuda` / `cpu`
+- `--headless`: disable viewer
 
-Hotkeys inside the viewer:
-- `B` – begin teleoperation
-- `R` – reset environment
-- `N` – mark success and reset
+Hotkeys:
+- `B` start  
+- `R` reset  
+- `N` success + reset  
 
-For real follower-arm deployment, use `scripts/deploy/deploy.py`.
+For real hardware: `scripts/deploy/deploy.py`
 
 ---
 
@@ -219,6 +206,7 @@ For real follower-arm deployment, use `scripts/deploy/deploy.py`.
 3. Register your controller in [`so101_hackathon/registry.py`](so101_hackathon/registry.py)  
 4. Run evaluation and inspect the outputs  
 5. Working, hmmm, let's beat the baseline 💪!
+6. Not sure if you broke somethig or not? Run unit tests: `pytest`
 
 **Built‑in baselines**:
 
@@ -230,33 +218,20 @@ For real follower-arm deployment, use `scripts/deploy/deploy.py`.
 
 ---
 
-## 📚 Repo Tour (nested READMEs)
+## 📚 Repo Tour
 
-Start with these links:
-
-- [scripts/README.md](scripts/README.md)
-- [scripts/deploy/README.md](scripts/deploy/README.md)
-- [so101_hackathon/controllers/README.md](so101_hackathon/controllers/README.md)
-- [so101_hackathon/envs/README.md](so101_hackathon/envs/README.md)
-- [so101_hackathon/deploy/README.md](so101_hackathon/deploy/README.md)
-- [so101_hackathon/rl_training/README.md](so101_hackathon/rl_training/README.md)
-- [so101_hackathon/sim/README.md](so101_hackathon/sim/README.md)
-- [so101_hackathon/sim/robots/README.md](so101_hackathon/sim/robots/README.md)
-- [so101_hackathon/utils/README.md](so101_hackathon/utils/README.md)
-
-## 🗺️ Short Module Map
-
-| Module | Purpose |
-|--------|---------|
-| `scripts/` | Command‑line entrypoints |
-| `scripts/deploy/` | Real‑robot and deployment scripts |
-| `so101_hackathon/controllers/` | Student controllers + baselines |
-| `so101_hackathon/envs/` | Both teleop environment entrypoints + helpers |
-| `so101_hackathon/deploy/` | Runtime and hardware integration helpers |
-| `so101_hackathon/evaluation/` | Evaluation wrappers and metrics |
-| `so101_hackathon/rl_training/` | PPO config and RSL‑RL integration |
-| `so101_hackathon/sim/` | Robot config, kinematics, simulator logic |
-| `so101_hackathon/utils/` | General helpers |
+| Path | Purpose |
+|------|--------|
+| [scripts/README.md](scripts/README.md) | General repo readme and Command-line entrypoints |
+| [scripts/deploy/README.md](scripts/deploy/README.md) | Real-robot and deployment scripts |
+| [so101_hackathon/controllers/README.md](so101_hackathon/controllers/README.md) | Controllers + baselines |
+| [so101_hackathon/envs/README.md](so101_hackathon/envs/README.md) | Teleop environment entrypoints + helpers |
+| [so101_hackathon/deploy/README.md](so101_hackathon/deploy/README.md) | Runtime and hardware integration helpers |
+| [so101_hackathon/evaluation/README.md](so101_hackathon/evaluation/README.md) | Evaluation wrappers and metrics |
+| [so101_hackathon/rl_training/README.md](so101_hackathon/rl_training/README.md) | PPO config and RSL-RL integration |
+| [so101_hackathon/sim/README.md](so101_hackathon/sim/README.md) | Robot config, kinematics, simulator logic |
+| [so101_hackathon/sim/robots/README.md](so101_hackathon/sim/robots/README.md) | Robot definitions and assets |
+| [so101_hackathon/utils/README.md](so101_hackathon/utils/README.md) | General helpers |
 
 
 ---

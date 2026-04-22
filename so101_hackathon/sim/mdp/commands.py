@@ -56,6 +56,7 @@ class TaskSpaceLeaderCommandCfg(CommandTermCfg):
     ranges: TaskSpaceLeaderRangesCfg = TaskSpaceLeaderRangesCfg()
 
     def __post_init__(self):
+        """Finalize dataclass initialization."""
         self.class_type = TaskSpaceLeaderCommand
 
 
@@ -69,6 +70,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
     cfg: TaskSpaceLeaderCommandCfg
 
     def __init__(self, cfg: TaskSpaceLeaderCommandCfg, env):
+        """Initialize the object."""
         super().__init__(cfg, env)
         self.robot: Articulation = env.scene[cfg.asset_name]
         self.body_idx = self.robot.find_bodies(cfg.body_name)[0][0]
@@ -166,14 +168,17 @@ class TaskSpaceLeaderCommand(CommandTerm):
 
     @property
     def target_joint_positions(self) -> torch.Tensor:
+        """Run target joint positions."""
         return self.target_joint_pos
 
     @property
     def target_joint_velocities(self) -> torch.Tensor:
+        """Run target joint velocities."""
         return self.target_joint_vel
 
     @property
     def target_ee_position(self) -> torch.Tensor:
+        """Run target ee position."""
         return self.command_position
 
     def _bind_leader_visual_override(self) -> None:
@@ -199,6 +204,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         self.leader.set_visibility(True)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> dict[str, float]:
+        """Reset internal state."""
         extras = super().reset(env_ids)
         if env_ids is None:
             env_ids = slice(None)
@@ -308,9 +314,11 @@ class TaskSpaceLeaderCommand(CommandTerm):
         }
 
     def get_episode_joint_rmse(self, env_ids: Sequence[int] | torch.Tensor) -> torch.Tensor:
+        """Return episode joint rmse."""
         return self.get_episode_tracking_statistics(env_ids)["joint_rmse"]
 
     def _update_metrics(self):
+        """Update metrics."""
         self.metrics["target_joint_speed"] = torch.linalg.norm(
             self.target_joint_vel, dim=-1)
         joint_error = self.target_joint_pos - \
@@ -328,6 +336,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         self.metrics["episode_max_joint_error"] = self._episode_max_joint_error
 
     def _resample_command(self, env_ids: Sequence[int]):
+        """Handle resample command."""
         if len(env_ids) == 0:
             return
         env_ids_tensor = torch.as_tensor(
@@ -387,6 +396,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         )
 
     def _update_command(self):
+        """Update command."""
         duration = self._segment_duration.unsqueeze(-1)
         phase = torch.clamp(
             self._segment_elapsed.unsqueeze(-1) / duration, min=0.0, max=1.0)
@@ -407,6 +417,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         self._segment_elapsed += self._env.step_dt
 
     def _sample_position_targets(self, start_position: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
+        """Sample position targets."""
         workspace_lower = self._workspace_lower.unsqueeze(0)
         workspace_upper = self._workspace_upper.unsqueeze(0)
         usable_range = workspace_upper - workspace_lower
@@ -420,6 +431,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         return local_lower + (local_upper - local_lower) * torch.rand_like(start_position)
 
     def _sample_gripper_targets(self, start_gripper: torch.Tensor, env_ids: torch.Tensor) -> torch.Tensor:
+        """Sample gripper targets."""
         limits = self.robot.data.soft_joint_pos_limits[env_ids,
                                                        self.gripper_joint_id]
         lower_limit = limits[:, 0:1]
@@ -439,6 +451,7 @@ class TaskSpaceLeaderCommand(CommandTerm):
         desired_position: torch.Tensor,
         desired_gripper: torch.Tensor,
     ) -> torch.Tensor:
+        """Handle solve end joint targets."""
         arm_joint_pos = start_joint_pos[:, self.arm_local_indices].clone()
         lower_limits = self.robot.data.soft_joint_pos_limits[env_ids_tensor][:,
                                                                              self.joint_ids, 0][:, self.arm_local_indices]
@@ -463,10 +476,12 @@ class TaskSpaceLeaderCommand(CommandTerm):
         return end_joint_pos
 
     def _compute_position_jacobian(self, arm_joint_pos: torch.Tensor, current_position: torch.Tensor) -> torch.Tensor:
+        """Compute position jacobian."""
         del current_position
         return compute_so101_ee_jacobian(arm_joint_pos, joint_names=self.arm_joint_names)
 
     def _solve_dls(self, position_error: torch.Tensor, jacobian: torch.Tensor) -> torch.Tensor:
+        """Handle solve dls."""
         jacobian_t = torch.transpose(jacobian, dim0=1, dim1=2)
         lambda_sq = float(self.cfg.ik_damping) ** 2
         lambda_matrix = lambda_sq * \

@@ -40,6 +40,7 @@ from so101_hackathon.deploy.hardware import (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Deploy a registered SO101 hackathon controller on real hardware.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -138,6 +139,7 @@ def _print_run_header(
     lower_limits: list[float],
     upper_limits: list[float],
 ) -> None:
+    """Handle print run header."""
     print(f"[INFO] Controller: {args.controller}")
     print(f"[INFO] Output dir: {output_dir}")
     print(f"[INFO] Device: {args.device}")
@@ -151,6 +153,7 @@ def _print_run_header(
 
 
 def _safe_disconnect(device, label: str) -> None:
+    """Handle safe disconnect."""
     if device is None:
         return
     try:
@@ -160,6 +163,7 @@ def _safe_disconnect(device, label: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
     args.device, _ = normalize_device_for_runtime(
         requested_device=args.device, wants_video=False)

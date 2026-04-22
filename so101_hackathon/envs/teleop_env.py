@@ -6,16 +6,22 @@ from typing import Any
 
 from so101_hackathon.envs.base_env import BaseHackathonEnvBuilder, TeleopEnvLaunch
 from so101_hackathon.sim.robots.so101_follower_spec import (
+    SO101_BASE_BODY_NAME,
     SO101_CONTACT_SENSOR_BODY_NAMES,
+    SO101_EE_BODY_NAME,
+    SO101_JAW_BODY_NAME,
     SO101_JOINT_NAMES,
 )
+from so101_hackathon.utils.rl_utils import TELEOP_RESIDUAL_ACTION_SCALE
 
 
 def _require_isaac_stack() -> None:
+    """Handle require isaac stack."""
     BaseHackathonEnvBuilder().require_isaac_stack()
 
 
 def _build_cfg_classes():
+    """Build cfg classes."""
     _require_isaac_stack()
 
     import isaaclab.sim as sim_utils
@@ -31,7 +37,7 @@ def _build_cfg_classes():
     from isaaclab.managers import SceneEntityCfg
     from isaaclab.managers import TerminationTermCfg as DoneTerm
     from isaaclab.scene import InteractiveSceneCfg
-    from isaaclab.sensors import ContactSensorCfg
+    from isaaclab.sensors import ContactSensorCfg, FrameTransformerCfg, OffsetCfg
     from isaaclab.utils import configclass
     from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -46,6 +52,7 @@ def _build_cfg_classes():
             spawn=sim_utils.GroundPlaneCfg(),
             init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
         )
+
         table = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Table",
             spawn=sim_utils.UsdFileCfg(
@@ -61,6 +68,21 @@ def _build_cfg_classes():
             update_period=0.0,
             history_length=3,
             debug_vis=False,
+        )
+        ee_frame = FrameTransformerCfg(
+            prim_path=f"{{ENV_REGEX_NS}}/Robot/{SO101_BASE_BODY_NAME}",
+            debug_vis=False,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path=f"{{ENV_REGEX_NS}}/Robot/{SO101_EE_BODY_NAME}",
+                    name=SO101_EE_BODY_NAME,
+                ),
+                FrameTransformerCfg.FrameCfg(
+                    prim_path=f"{{ENV_REGEX_NS}}/Robot/{SO101_JAW_BODY_NAME}",
+                    name=SO101_JAW_BODY_NAME,
+                    offset=OffsetCfg(pos=(-0.021, -0.070, 0.02)),
+                ),
+            ],
         )
         light = AssetBaseCfg(
             prim_path="/World/light",
@@ -84,7 +106,7 @@ def _build_cfg_classes():
             asset_name="robot",
             joint_names=arm_joint_names,
             command_name="leader_joints",
-            scale=0.25,
+            scale=TELEOP_RESIDUAL_ACTION_SCALE,
             offset=0.0,
             preserve_order=True,
             max_delay=8,
@@ -110,10 +132,28 @@ def _build_cfg_classes():
                 params={"command_name": "leader_joints", "asset_cfg": SceneEntityCfg(
                     "robot", joint_names=arm_joint_names)},
             )
-            previous_action = ObsTerm(func=so101_mdp.applied_action, params={
-                                      "action_name": "arm_action"})
+            previous_action = ObsTerm(func=so101_mdp.last_action)
+
+            """Optional low-dimensional policy layout to be used when needed."""
+
+            # joint_pos = ObsTerm(func=so101_mdp.joint_pos)
+            # joint_vel = ObsTerm(func=so101_mdp.joint_vel)
+            # joint_pos_rel = ObsTerm(func=so101_mdp.joint_pos_rel)
+            # joint_vel_rel = ObsTerm(func=so101_mdp.joint_vel_rel)
+            # ee_frame_state = ObsTerm(
+            #     func=so101_mdp.ee_frame_state,
+            #     params={
+            #         "ee_frame_cfg": SceneEntityCfg("ee_frame"),
+            #         "robot_cfg": SceneEntityCfg("robot"),
+            #     },
+            # )
+            # joint_pos_target = ObsTerm(
+            #     func=so101_mdp.joint_pos_target,
+            #     params={"asset_cfg": SceneEntityCfg("robot")},
+            # )
 
             def __post_init__(self):
+                """Finalize dataclass initialization."""
                 self.enable_corruption = False
                 self.concatenate_terms = True
                 self.history_length = 1
@@ -155,34 +195,34 @@ def _build_cfg_classes():
     @configclass
     class TerminationsCfg:
         time_out = DoneTerm(func=so101_mdp.time_out, time_out=True)
-        collision = DoneTerm(
-            func=so101_mdp.illegal_contact,
-            params={
-                "threshold": 5.0,
-                "sensor_cfg": SceneEntityCfg(
-                    "arm_contact",
-                    body_names=list(SO101_CONTACT_SENSOR_BODY_NAMES),
-                ),
-            },
-        )
-        excessive_joint_error = DoneTerm(
-            func=so101_mdp.joint_error_too_large,
-            params={
-                "command_name": "leader_joints",
-                "asset_cfg": SceneEntityCfg("robot", joint_names=arm_joint_names),
-                "max_abs_error": 0.75,
-            },
-        )
-        joint_limit_violation = DoneTerm(
-            func=so101_mdp.joint_limit_violation,
-            params={"asset_cfg": SceneEntityCfg(
-                "robot", joint_names=arm_joint_names), "position_tolerance": 0.02},
-        )
-        unstable_joint_velocity = DoneTerm(
-            func=so101_mdp.unstable_joint_velocity,
-            params={"asset_cfg": SceneEntityCfg(
-                "robot", joint_names=arm_joint_names), "max_velocity": 2.0},
-        )
+        # collision = DoneTerm(
+        #     func=so101_mdp.illegal_contact,
+        #     params={
+        #         "threshold": 5.0,
+        #         "sensor_cfg": SceneEntityCfg(
+        #             "arm_contact",
+        #             body_names=list(SO101_CONTACT_SENSOR_BODY_NAMES),
+        #         ),
+        #     },
+        # )
+        # excessive_joint_error = DoneTerm(
+        #     func=so101_mdp.joint_error_too_large,
+        #     params={
+        #         "command_name": "leader_joints",
+        #         "asset_cfg": SceneEntityCfg("robot", joint_names=arm_joint_names),
+        #         "max_abs_error": 0.75,
+        #     },
+        # )
+        # joint_limit_violation = DoneTerm(
+        #     func=so101_mdp.joint_limit_violation,
+        #     params={"asset_cfg": SceneEntityCfg(
+        #         "robot", joint_names=arm_joint_names), "position_tolerance": 0.02},
+        # )
+        # unstable_joint_velocity = DoneTerm(
+        #     func=so101_mdp.unstable_joint_velocity,
+        #     params={"asset_cfg": SceneEntityCfg(
+        #         "robot", joint_names=arm_joint_names), "max_velocity": 2.0},
+        # )
 
     @configclass
     class CurriculumCfg:
@@ -217,6 +257,7 @@ def _build_cfg_classes():
         curriculum: CurriculumCfg = CurriculumCfg()
 
         def __post_init__(self):
+            """Finalize dataclass initialization."""
             legacy_joint_pos = {
                 "shoulder_pan": 0.0,
                 "shoulder_lift": 0.0,
@@ -236,7 +277,7 @@ def _build_cfg_classes():
                     joint_vel={".*": 0.0},
                 ),
             )
-            self.decimation = 2
+            self.decimation = 1
             self.sim.dt = 1.0 / 60.0
             self.sim.render_interval = self.decimation
             self.episode_length_s = 12.0
@@ -300,6 +341,7 @@ class TrainingTeleopEnvBuilder(BaseHackathonEnvBuilder):
         eval_time_out_only: bool = False,
         **_: Any,
     ) -> Any:
+        """Build env cfg."""
         teleop_env_cfg_cls = _build_cfg_classes()
         env_cfg = teleop_env_cfg_cls()
         env_cfg.seed = seed

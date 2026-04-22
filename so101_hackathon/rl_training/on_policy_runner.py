@@ -13,4 +13,5 @@ class OnPolicyRunner(RslRlOnPolicyRunner):  # type: ignore
     """Thin wrapper kept for future repo-local hooks."""
 
     def learn(self, *args, **kwargs):
+        """Run learning."""
         return super().learn(*args, **kwargs)

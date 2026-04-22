@@ -18,6 +18,7 @@ _GAUSSIAN_DISTRIBUTION_CLASS = "rsl_rl.modules.distribution:GaussianDistribution
 
 
 def _unwrap_policy_observation(obs: Any) -> Any:
+    """Unwrap policy observation."""
     if isinstance(obs, dict):
         if "policy" in obs:
             return obs["policy"]
@@ -27,6 +28,7 @@ def _unwrap_policy_observation(obs: Any) -> Any:
 
 
 def _import_rsl_rl_inference_deps():
+    """Import rsl rl inference deps."""
     try:
         import torch
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime environment
@@ -49,6 +51,7 @@ def _import_rsl_rl_inference_deps():
 
 
 def _load_checkpoint_payload(torch_module: Any, checkpoint_path: str, device: str) -> dict[str, Any]:
+    """Load checkpoint payload."""
     load_kwargs = {"map_location": device}
     try:
         payload = torch_module.load(
@@ -62,6 +65,7 @@ def _load_checkpoint_payload(torch_module: Any, checkpoint_path: str, device: st
 
 
 def _extract_actor_state_dict(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract actor state dict."""
     if "actor_state_dict" in payload:
         state_dict = payload["actor_state_dict"]
     else:
@@ -82,6 +86,7 @@ class EnvFreePpoPolicy:
     device: str
 
     def __call__(self, obs: Any) -> Any:
+        """Call the object."""
         obs = _unwrap_policy_observation(obs)
         if isinstance(obs, list):
             obs_tensor = self.torch_module.tensor(

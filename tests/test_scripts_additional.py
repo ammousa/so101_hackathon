@@ -11,6 +11,7 @@ import scripts.deploy.calibrate_hardware as calibrate_script
 
 class TrainScriptTests(unittest.TestCase):
     def test_build_training_log_dir_appends_run_name(self):
+        """Verify build training log dir appends run name."""
         fake_datetime = mock.Mock()
         fake_datetime.now.return_value.strftime.return_value = "2026-04-21_12-00-00"
 
@@ -21,6 +22,7 @@ class TrainScriptTests(unittest.TestCase):
 
 class CalibrationScriptTests(unittest.TestCase):
     def test_main_uses_role_specific_defaults_for_leader(self):
+        """Verify main uses role specific defaults for leader."""
         with mock.patch.object(calibrate_script, "calibrate_so101_arm", return_value="/tmp/leader.json") as mocked_calibrate:
             result = calibrate_script.main(["--role", "leader"])
 
@@ -34,6 +36,7 @@ class CalibrationScriptTests(unittest.TestCase):
         )
 
     def test_main_for_follower_passes_overrides(self):
+        """Verify main for follower passes overrides."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.object(calibrate_script, "calibrate_so101_arm", return_value="/tmp/follower.json") as mocked_calibrate:
                 result = calibrate_script.main(

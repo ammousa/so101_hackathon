@@ -32,6 +32,7 @@ from so101_hackathon.registry import create_controller, list_controller_names
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description="Evaluate any registered SO101 hackathon controller.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -156,6 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _coerce_override_value(raw_value: str) -> Any:
+    """Coerce override value."""
     lowered = raw_value.lower()
     if lowered == "true":
         return True
@@ -175,6 +177,7 @@ def _apply_controller_overrides(
     controller_config: dict[str, Any],
     overrides: list[str],
 ) -> dict[str, Any]:
+    """Apply controller overrides."""
     hydra_key_map = {
         "kp": "kp",
         "kd": "kd",
@@ -211,6 +214,7 @@ def _apply_controller_overrides(
 
 
 def _run_cli(argv: list[str] | None = None) -> int:
+    """Run the command-line interface."""
     parser = build_parser()
     args, overrides = parser.parse_known_args(argv)
     args.device, args.video = normalize_device_for_runtime(

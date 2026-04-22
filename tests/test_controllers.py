@@ -15,11 +15,13 @@ def _build_observation(
     latest_error_vel: list[float],
     latest_joint_command: list[float] | None = None,
 ) -> list[float]:
+    """Build observation."""
     joint_dim = len(TELEOP_JOINT_NAMES)
     term_size = joint_dim * TELEOP_HISTORY_LENGTH
     history = [0.0] * (term_size * 5)
 
     def write_latest(term_index: int, values: list[float]) -> None:
+        """Write latest."""
         start = term_index * term_size + term_size - joint_dim
         history[start: start + joint_dim] = values
 
@@ -31,6 +33,7 @@ def _build_observation(
 
 class ControllerTests(unittest.TestCase):
     def test_raw_controller_returns_latest_joint_command(self):
+        """Verify raw controller returns latest joint command."""
         controller = RawController()
         command = [0.2, -0.1, 0.4, -0.3, 0.05, 0.7]
         observation = _build_observation(
@@ -44,6 +47,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(action, command)
 
     def test_pd_controller_uses_joint_error_and_velocity_and_clamps(self):
+        """Verify pd controller uses joint error and velocity and clamps."""
         controller = TeleopPDController(kp=2.0, kd=0.5, max_action=0.5)
         leader_command = [0.5, -0.4, 0.2, -0.1, 0.8, 0.3]
         observation = _build_observation(
@@ -63,16 +67,19 @@ class ControllerTests(unittest.TestCase):
         self.assertAlmostEqual(action[5], 0.3, places=6)
 
     def test_registry_lists_and_builds_pd_controller(self):
+        """Verify registry lists and builds pd controller."""
         self.assertEqual(list_controller_names(), ["pd", "ppo", "raw"])
         controller = create_controller("pd", env=None, config={"kp": 0.25})
         self.assertIsInstance(controller, TeleopPDController)
         self.assertEqual(controller.kp, 0.25)
 
     def test_registry_builds_raw_controller(self):
+        """Verify registry builds raw controller."""
         controller = create_controller("raw", env=None)
         self.assertIsInstance(controller, RawController)
 
     def test_registry_ignores_unrelated_kwargs_for_simple_controllers(self):
+        """Verify registry ignores unrelated kwargs for simple controllers."""
         controller = create_controller(
             "pd",
             env=None,
@@ -83,6 +90,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(controller.kp, 0.5)
 
     def test_ppo_controller_can_load_without_environment(self):
+        """Verify ppo controller can load without environment."""
         fake_policy = object()
         with mock.patch(
             "so101_hackathon.controllers.rl_ppo.load_env_free_ppo_policy",

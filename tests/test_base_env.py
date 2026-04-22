@@ -9,18 +9,22 @@ from so101_hackathon.envs.base_env import BaseHackathonEnvBuilder
 
 class _DummyBuilder(BaseHackathonEnvBuilder):
     def __init__(self):
+        """Initialize the object."""
         self.cfg_calls = []
 
     def require_isaac_stack(self) -> None:
+        """Run require isaac stack."""
         return None
 
     def build_env_cfg(self, **kwargs):
+        """Build env cfg."""
         self.cfg_calls.append(dict(kwargs))
         return {"cfg": kwargs}
 
 
 class BaseEnvBuilderTests(unittest.TestCase):
     def test_make_env_requires_video_dir_when_recording(self):
+        """Verify make env requires video dir when recording."""
         builder = _DummyBuilder()
         fake_gym = types.SimpleNamespace(make=mock.Mock(return_value=mock.Mock()))
 
@@ -29,6 +33,7 @@ class BaseEnvBuilderTests(unittest.TestCase):
                 builder.make_env(env_id="teleop-env", env_cfg={}, record_video=True)
 
     def test_make_env_wraps_video_and_rl_layers(self):
+        """Verify make env wraps video and rl layers."""
         builder = _DummyBuilder()
         fake_env = mock.Mock(name="env")
         wrapped_video_env = mock.Mock(name="video_env")

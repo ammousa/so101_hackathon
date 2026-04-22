@@ -11,10 +11,9 @@ from so101_hackathon.deploy.runtime import (
     blend_with_leader,
     build_follower_action,
     clamp_joint_positions,
-    hardware_obs_to_joint_positions,
     normalize_controller_action,
 )
-from so101_hackathon.utils.rl_utils import clamp_action
+from so101_hackathon.utils.rl_utils import TELEOP_RESIDUAL_ACTION_SCALE, clamp_action
 
 
 def run_deploy_session(
@@ -32,6 +31,7 @@ def run_deploy_session(
     time_fn=time.perf_counter,
     num_iterations: int | None = None,
 ) -> int:
+    """Run run deploy session."""
     start_time = time_fn()
     previous_sample_time = None
     observation_builder.reset()
@@ -71,17 +71,17 @@ def run_deploy_session(
             )
             if hasattr(residual_action, "tolist"):
                 residual_action = residual_action.tolist()
-            blended_action = [
-                float(leader) + float(args.controller_coeff) * float(residual)
+            controller_command = [
+                float(leader) + float(args.controller_coeff) * TELEOP_RESIDUAL_ACTION_SCALE * float(residual)
                 for leader, residual in zip(live_obs.leader_joint_pos, residual_action)
             ]
         else:
-            blended_action = blend_with_leader(
+            controller_command = blend_with_leader(
                 live_obs.leader_joint_pos,
                 controller_action,
                 float(args.controller_coeff),
             )
-        disturbed_action = disturbance_channel.apply(blended_action)
+        disturbed_action = disturbance_channel.apply(controller_command)
         commanded_joint_pos = clamp_joint_positions(
             disturbed_action, lower_limits, upper_limits)
         follower_action = build_follower_action(
@@ -89,7 +89,7 @@ def run_deploy_session(
             active_joint_names=active_follower_joint_names,
         )
         follower.send_action(follower_action)
-        observation_builder.set_previous_action(commanded_joint_pos)
+        observation_builder.set_previous_action(controller_command)
 
         metrics.update(
             step=iter_idx,
