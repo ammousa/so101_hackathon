@@ -11,6 +11,11 @@ from pathlib import Path
 from unittest import mock
 
 import scripts.deploy.sim_pick_orange.teleop as teleop_script
+from so101_hackathon.deploy.runtime import (
+    FixedDisturbanceChannel,
+    build_follower_action,
+    hardware_obs_to_joint_positions,
+)
 from so101_hackathon.utils.rl_utils import TELEOP_RESIDUAL_ACTION_SCALE
 
 
@@ -34,8 +39,55 @@ class SimPickOrangeTeleopTests(unittest.TestCase):
         self.assertIn("--controller", help_text)
         self.assertIn("--controller-config", help_text)
         self.assertIn("--checkpoint-path", help_text)
+        self.assertIn("--disturbance-channel", help_text)
         self.assertEqual(args.controller, "pd")
         self.assertEqual(args.controller_coeff, 0.25)
+        self.assertEqual(parser.parse_args([]).disturbance_channel, "fixed")
+
+    def test_ultrazohm_rejects_multi_env_pick_orange(self):
+        """Verify UltraZohm disturbance rejects multi-env PickOrange teleop."""
+        args = teleop_script.build_parser().parse_args(
+            ["--disturbance-channel", "ultrazohm", "--num_envs", "2"])
+
+        with self.assertRaisesRegex(ValueError, "--num_envs 1"):
+            teleop_script.validate_disturbance_args(args)
+
+    def test_action_disturbance_accepts_unbatched_action_vector(self):
+        """Verify action disturbance accepts an unbatched action vector."""
+        channel = FixedDisturbanceChannel(delay_steps=0, noise_std=0.0, seed=0)
+
+        disturbed = teleop_script.apply_action_disturbance(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            channel,
+        )
+
+        self.assertEqual(disturbed, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+
+    def test_ultrazohm_disturbance_accepts_unbatched_action_vector(self):
+        """Verify UltraZohm disturbance accepts an unbatched action vector."""
+        channel = mock.Mock()
+        channel.apply.return_value = build_follower_action(
+            [1.1, 2.1, 3.1, 4.1, 5.1, 0.7])
+
+        disturbed = teleop_script.apply_ultrazohm_action_disturbance(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 0.6],
+            channel,
+        )
+
+        expected = hardware_obs_to_joint_positions(channel.apply.return_value)
+        for actual, expected_value in zip(disturbed, expected):
+            self.assertAlmostEqual(actual, expected_value, places=6)
+
+    def test_ultrazohm_disturbance_errors_can_be_fallback_safe(self):
+        """Verify UltraZohm disturbance errors are ordinary exceptions."""
+        channel = mock.Mock()
+        channel.apply.side_effect = OSError("CAN interface hiccup")
+
+        with self.assertRaisesRegex(OSError, "CAN interface hiccup"):
+            teleop_script.apply_ultrazohm_action_disturbance(
+                [1.0, 2.0, 3.0, 4.0, 5.0, 0.6],
+                channel,
+            )
 
     def test_build_controller_config_forwards_runtime_defaults(self):
         """Verify build controller config forwards runtime defaults."""

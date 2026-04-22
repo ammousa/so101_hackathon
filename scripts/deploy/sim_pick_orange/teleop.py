@@ -25,7 +25,10 @@ from so101_hackathon.deploy.runtime import (
     DEFAULT_LEADER_PORT,
     DEFAULT_NOISE_STD,
     FixedDisturbanceChannel,
+    build_follower_action,
+    hardware_obs_to_joint_positions,
 )
+from so101_hackathon.deploy.ultrazohm import UltraZohmDisturbanceChannel
 from so101_hackathon.registry import create_controller, list_controller_names
 from so101_hackathon.utils.rl_utils import (
     TELEOP_JOINT_NAMES,
@@ -111,6 +114,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_NOISE_STD,
         help="Gaussian joint-space noise standard deviation in radians applied to joints 1-4 only.",
     )
+    parser.add_argument(
+        "--disturbance-channel",
+        choices=["fixed", "ultrazohm"],
+        default="fixed",
+        help="Disturbance channel used after the controller command.",
+    )
+    parser.add_argument(
+        "--uzohm-can-iface",
+        default="can0",
+        help="SocketCAN interface used when --disturbance-channel=ultrazohm.",
+    )
+    parser.add_argument(
+        "--uzohm-timeout-s",
+        type=float,
+        default=1.0,
+        help="UltraZohm manipulated-output timeout in seconds.",
+    )
     parser.add_argument("--recalibrate", action="store_true",
                         help="Delete the cached leader calibration file first.")
     if not has_app_launcher_args:
@@ -119,6 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--enable_cameras", action="store_true",
                             default=False, help="Enable camera rendering.")
     return parser
+
+
+def validate_disturbance_args(args: argparse.Namespace) -> None:
+    """Validate disturbance options."""
+    if args.disturbance_channel == "ultrazohm" and int(args.num_envs) != 1:
+        raise ValueError("UltraZohm disturbance supports --num_envs 1 only.")
 
 
 def _remove_cached_leader_calibration(leader_id: str) -> None:
@@ -527,12 +553,50 @@ class SimTeleopObservationBuilder:
         )
 
 
+def _single_action_values(actions) -> list[float]:
+    """Return one six-joint action from a vector or single-env batch."""
+    if _is_tensor(actions):
+        if actions.ndim == 1:
+            return actions.detach().cpu().tolist()
+        if actions.ndim == 2 and actions.shape[0] == 1:
+            return actions[0].detach().cpu().tolist()
+        raise ValueError(
+            f"Expected one action vector, received tensor shape {tuple(actions.shape)}")
+    if isinstance(actions, list) and actions and isinstance(actions[0], list):
+        if len(actions) != 1:
+            raise ValueError(
+                f"Expected one action vector, received batch length {len(actions)}")
+        return [float(value) for value in actions[0]]
+    return [float(value) for value in actions]
+
+
+def _with_single_action_values(actions, command: list[float]):
+    """Return actions with every slot replaced by one six-joint command."""
+    if _is_tensor(actions):
+        disturbed_actions = actions.clone()
+        command_tensor = actions.new_tensor(command)
+        if actions.ndim == 1:
+            disturbed_actions[:] = command_tensor
+        else:
+            disturbed_actions[:, :] = command_tensor
+        return disturbed_actions
+    if isinstance(actions, list) and actions and isinstance(actions[0], list):
+        return [list(command) for _ in actions]
+    return list(command)
+
+
 def apply_action_disturbance(actions, channel: FixedDisturbanceChannel):
     """Apply action disturbance."""
-    disturbed_command = channel.apply(actions[0].detach().cpu().tolist())
-    disturbed_actions = actions.clone()
-    disturbed_actions[:, :] = actions.new_tensor(disturbed_command)
-    return disturbed_actions
+    disturbed_command = channel.apply(_single_action_values(actions))
+    return _with_single_action_values(actions, disturbed_command)
+
+
+def apply_ultrazohm_action_disturbance(actions, channel: UltraZohmDisturbanceChannel):
+    """Apply UltraZohm action disturbance through LeRobot action values."""
+    action_dict = build_follower_action(_single_action_values(actions))
+    manipulated_action = channel.apply(action_dict)
+    disturbed_command = hardware_obs_to_joint_positions(manipulated_action)
+    return _with_single_action_values(actions, disturbed_command)
 
 
 class ViewportLayoutManager:
@@ -636,6 +700,7 @@ def _launch_app(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
+    validate_disturbance_args(args)
 
     simulation_app = _launch_app(args)
     from so101_hackathon.envs.pick_orange_env import PickOrangeEnvBuilder
@@ -656,11 +721,18 @@ def main(argv: list[str] | None = None) -> int:
             env.termination_manager.get_term_cfg("success"))
     teleop = SO101LeaderTeleop(
         env, port=args.port, recalibrate=bool(args.recalibrate))
-    disturbance_channel = FixedDisturbanceChannel(
-        delay_steps=int(args.delay_steps),
-        noise_std=float(args.noise_std),
-        seed=int(env_cfg.seed),
-    )
+    if args.disturbance_channel == "ultrazohm":
+        disturbance_channel = UltraZohmDisturbanceChannel(
+            can_iface=args.uzohm_can_iface,
+            timeout_s=float(args.uzohm_timeout_s),
+        )
+        disturbance_channel.connect()
+    else:
+        disturbance_channel = FixedDisturbanceChannel(
+            delay_steps=int(args.delay_steps),
+            noise_std=float(args.noise_std),
+            seed=int(env_cfg.seed),
+        )
     viewport_layout = None
     teleop.display_controls()
     rate_limiter = RateLimiter(args.step_hz)
@@ -677,6 +749,7 @@ def main(argv: list[str] | None = None) -> int:
         viewport_layout.configure(env)
 
     interrupted = False
+    last_uzohm_warning_s = 0.0
 
     def signal_handler(signum, frame):
         """Handle shutdown signals."""
@@ -730,8 +803,22 @@ def main(argv: list[str] | None = None) -> int:
                     controller=controller,
                     controller_coeff=float(args.controller_coeff),
                 )
-                actions = clamp_sim_joint_positions(
-                    apply_action_disturbance(controller_decided_actions, disturbance_channel), env)
+                if args.disturbance_channel == "ultrazohm":
+                    raw_actions = clamp_sim_joint_positions(
+                        controller_decided_actions, env)
+                    try:
+                        actions = apply_ultrazohm_action_disturbance(
+                            raw_actions, disturbance_channel)
+                    except Exception as exc:
+                        now = time.time()
+                        if (now - last_uzohm_warning_s) >= 2.0:
+                            print(f"[WARN] UltraZohm disturbance failed; using raw command this step: {exc}")
+                            last_uzohm_warning_s = now
+                        actions = raw_actions
+                    actions = clamp_sim_joint_positions(actions, env)
+                else:
+                    actions = clamp_sim_joint_positions(
+                        apply_action_disturbance(controller_decided_actions, disturbance_channel), env)
                 env.step(actions)
                 observation_builder.set_previous_action(controller_decided_actions)
             rate_limiter.sleep(env)
@@ -739,6 +826,9 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGINT, original_sigint_handler)
         if viewport_layout is not None:
             viewport_layout.close()
+        close_method = getattr(disturbance_channel, "close", None)
+        if callable(close_method):
+            close_method()
         teleop.close()
         env.close()
         simulation_app.close()

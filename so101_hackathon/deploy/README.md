@@ -125,6 +125,27 @@ python scripts/deploy/deploy.py \
 - `--controller-coeff`: generic blend coefficient between direct teleop and controller output
 - `--rl_coeff`: compatibility alias for `--controller-coeff`
 - `--output-dir`: explicit artifact directory instead of the default `logs/.../deploy/...` location
+- `--disturbance-channel`: `fixed` for the built-in delay/noise channel, or `ultrazohm` to route follower commands through UltraZohm
+- `--uzohm-can-iface`: SocketCAN interface used by UltraZohm, for example `can0`
+- `--uzohm-timeout-s`: timeout in seconds while waiting for UltraZohm manipulated outputs
+
+## UltraZohm disturbance
+
+The default `fixed` disturbance channel keeps using `--delay-steps` and `--noise-std`.
+To use UltraZohm instead, select it explicitly:
+
+```bash
+python scripts/deploy/deploy.py \
+  --controller pd \
+  --disturbance-channel ultrazohm \
+  --uzohm-can-iface can0
+```
+
+UltraZohm noise and delay values are controlled outside the deploy process. Run the panel in another terminal:
+
+```bash
+python external/ultrazohm/sebi-scripts/09_noise_control_panel.py --can-iface can0
+```
 
 ## PPO example
 

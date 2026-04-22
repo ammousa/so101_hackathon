@@ -29,10 +29,32 @@ python scripts/deploy/sim_pick_orange/teleop.py \
 - `--step_hz`: target sim control frequency.
 - `--delay-steps`: fixed post-controller command delay in control steps.
 - `--noise-std`: Gaussian joint-space command noise in radians for joints 1-4 only. Delay still applies to all joints.
+- `--disturbance-channel`: disturbance source. Use `fixed` for the built-in delay/noise model or `ultrazohm` to route commands through UltraZohm.
+- `--uzohm-can-iface`: SocketCAN interface for UltraZohm, for example `can0`.
+- `--uzohm-timeout-s`: UltraZohm manipulated-output timeout in seconds.
 - `--recalibrate`: remove the cached leader calibration before connecting.
 - `--device`: Torch/Isaac device string.
 - `--enable_cameras`: enable RGB camera rendering.
 - `--headless`: run without the viewer.
+
+UltraZohm example:
+
+```bash
+python scripts/deploy/sim_pick_orange/teleop.py \
+  --controller raw \
+  --port /dev/ttyACM1 \
+  --num_envs 1 \
+  --device cuda \
+  --enable_cameras \
+  --disturbance-channel ultrazohm \
+  --uzohm-can-iface can0
+```
+
+Use the UltraZohm noise panel separately to change noise and delay while the teleop script runs:
+
+```bash
+python external/ultrazohm/sebi-scripts/09_noise_control_panel.py --can-iface can0
+```
 
 ## Scope
 

@@ -20,6 +20,7 @@ nsrl/envs/isaac/go1/deploy/src
 !**/logs/**/keep/**
 cmd*.sh
 AGENTS.md
+external/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

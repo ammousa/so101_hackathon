@@ -158,6 +158,7 @@ python scripts/deploy/sim_pick_orange/teleop.py \
   --num_envs 1 \
   --device cuda \
   --enable_cameras
+  --disturbance-channel ultrazohm # or `fixed` for python-driven disturbance
 ```
 
 Key args:
@@ -168,6 +169,9 @@ Key args:
 - `--num_envs`: parallel envs (use `1` for teleop)
 - `--device`: `cuda` / `cpu`
 - `--headless`: disable viewer
+- `--disturbance-channel`: `fixed` by default, or `ultrazohm` to route commands through UltraZohm
+- `--uzohm-can-iface`: SocketCAN interface for UltraZohm, for example `can0`
+- `--uzohm-timeout-s`: timeout in seconds for UltraZohm manipulated outputs
 
 Hotkeys:
 - `B` start  

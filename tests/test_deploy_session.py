@@ -110,6 +110,9 @@ def _args(controller_coeff: float = 1.0) -> argparse.Namespace:
         delay_steps=0,
         noise_std=0.0,
         seed=0,
+        disturbance_channel="fixed",
+        uzohm_can_iface="can0",
+        uzohm_timeout_s=1.0,
     )
 
 
@@ -306,8 +309,123 @@ class DeploySessionTests(unittest.TestCase):
         self.assertEqual(steps, 1)
         self.assertNotIn("gripper.pos", follower.sent_actions[0])
 
+    def test_run_deploy_session_ultrazohm_receives_lerobot_action_values(self):
+        """Verify UltraZohm receives LeRobot action values."""
+        leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
+        follower = _FakeFollower([_robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])])
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+        args = _args()
+        args.disturbance_channel = "ultrazohm"
+        args.uzohm_can_iface = "can1"
+        args.uzohm_timeout_s = 0.25
+        channel = mock.Mock()
+        channel.apply.return_value = _robot_obs([11.0, 21.0, 31.0, 41.0, 51.0, 61.0])
+
+        with mock.patch("so101_hackathon.deploy.session.UltraZohmDisturbanceChannel", return_value=channel) as ctor:
+            steps = run_deploy_session(
+                args=args,
+                leader=leader,
+                follower=follower,
+                controller=RawController(),
+                observation_builder=LiveTeleopObservationBuilder(),
+                metrics=metrics,
+                lower_limits=lower_limits,
+                upper_limits=upper_limits,
+                sleep_fn=lambda _seconds: None,
+                num_iterations=1,
+            )
+
+        self.assertEqual(steps, 1)
+        ctor.assert_called_once_with(can_iface="can1", timeout_s=0.25)
+        channel.connect.assert_called_once_with()
+        channel.reset.assert_called_once_with()
+        channel.close.assert_called_once_with()
+        sent_to_uzohm = channel.apply.call_args.args[0]
+        self.assertAlmostEqual(sent_to_uzohm["shoulder_pan.pos"], 10.0, places=4)
+        self.assertAlmostEqual(sent_to_uzohm["gripper.pos"], 60.0, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 11.0, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 61.0, places=4)
+
+    def test_run_deploy_session_ultrazohm_timeout_falls_back_to_raw_action(self):
+        """Verify UltraZohm timeout falls back to raw action."""
+        leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
+        follower = _FakeFollower([_robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])])
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+        args = _args()
+        args.disturbance_channel = "ultrazohm"
+        channel = mock.Mock()
+        channel.apply.side_effect = TimeoutError("missing 0x300")
+
+        with mock.patch("so101_hackathon.deploy.session.UltraZohmDisturbanceChannel", return_value=channel):
+            steps = run_deploy_session(
+                args=args,
+                leader=leader,
+                follower=follower,
+                controller=RawController(),
+                observation_builder=LiveTeleopObservationBuilder(),
+                metrics=metrics,
+                lower_limits=lower_limits,
+                upper_limits=upper_limits,
+                sleep_fn=lambda _seconds: None,
+                num_iterations=1,
+            )
+
+        self.assertEqual(steps, 1)
+        self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 10.0, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
+
+    def test_run_deploy_session_ultrazohm_still_sends_missing_gripper(self):
+        """Verify UltraZohm receives six joints when follower gripper is absent."""
+        leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
+        follower_obs = _robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        follower_obs.pop("gripper.pos")
+        follower = _FakeFollower([follower_obs])
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+        args = _args()
+        args.disturbance_channel = "ultrazohm"
+        channel = mock.Mock()
+        channel.apply.return_value = _robot_obs([11.0, 21.0, 31.0, 41.0, 51.0, 61.0])
+
+        with mock.patch("so101_hackathon.deploy.session.UltraZohmDisturbanceChannel", return_value=channel):
+            steps = run_deploy_session(
+                args=args,
+                leader=leader,
+                follower=follower,
+                controller=RawController(),
+                observation_builder=LiveTeleopObservationBuilder(missing_follower_joint_names={"gripper"}),
+                metrics=metrics,
+                lower_limits=lower_limits,
+                upper_limits=upper_limits,
+                sleep_fn=lambda _seconds: None,
+                active_follower_joint_names=JOINT_NAMES[:-1],
+                num_iterations=1,
+            )
+
+        self.assertEqual(steps, 1)
+        self.assertIn("gripper.pos", channel.apply.call_args.args[0])
+        self.assertNotIn("gripper.pos", follower.sent_actions[0])
+
 
 class DeployScriptTests(unittest.TestCase):
+    def test_deploy_parser_exposes_disturbance_options(self):
+        """Verify deploy parser exposes disturbance options."""
+        args = deploy_script.build_parser().parse_args([])
+
+        self.assertEqual(args.disturbance_channel, "fixed")
+        self.assertEqual(args.uzohm_can_iface, "can0")
+        self.assertEqual(args.uzohm_timeout_s, 1.0)
+
+        args = deploy_script.build_parser().parse_args(
+            ["--disturbance-channel", "ultrazohm", "--uzohm-can-iface", "can1", "--uzohm-timeout-s", "0.25"]
+        )
+
+        self.assertEqual(args.disturbance_channel, "ultrazohm")
+        self.assertEqual(args.uzohm_can_iface, "can1")
+        self.assertEqual(args.uzohm_timeout_s, 0.25)
+
     def test_deploy_main_disconnects_hardware_on_keyboard_interrupt(self):
         """Verify deploy main disconnects hardware on keyboard interrupt."""
         leader = _FakeLeader([_robot_obs([0.0] * 6)])

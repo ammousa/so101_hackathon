@@ -103,6 +103,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Gaussian command noise standard deviation in radians for joints 1-4 only.",
     )
     parser.add_argument(
+        "--disturbance-channel",
+        choices=["fixed", "ultrazohm"],
+        default="fixed",
+        help="Disturbance channel used after the controller command.",
+    )
+    parser.add_argument(
+        "--uzohm-can-iface",
+        default="can0",
+        help="SocketCAN interface used when --disturbance-channel=ultrazohm.",
+    )
+    parser.add_argument(
+        "--uzohm-timeout-s",
+        type=float,
+        default=1.0,
+        help="UltraZohm manipulated-output timeout in seconds.",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default=None,
@@ -144,8 +161,12 @@ def _print_run_header(
     print(f"[INFO] Output dir: {output_dir}")
     print(f"[INFO] Device: {args.device}")
     print(f"[INFO] Controller coefficient: {args.controller_coeff}")
-    print(
-        f"[INFO] Disturbance: delay_steps={args.delay_steps}, noise_std={args.noise_std}")
+    if args.disturbance_channel == "ultrazohm":
+        print(
+            f"[INFO] Disturbance: ultrazohm can_iface={args.uzohm_can_iface}, timeout_s={args.uzohm_timeout_s}")
+    else:
+        print(
+            f"[INFO] Disturbance: fixed delay_steps={args.delay_steps}, noise_std={args.noise_std}")
     if checkpoint_path:
         print(f"[INFO] Checkpoint: {checkpoint_path}")
     print(f"[INFO] Joint lower limits (rad): {lower_limits}")
