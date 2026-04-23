@@ -13,7 +13,6 @@ from so101_hackathon.deploy.runtime import (
     LiveTeleopObservationBuilder,
     get_joint_limit_vectors,
     hardware_obs_to_joint_positions,
-    parse_joint_limits_from_urdf,
 )
 from so101_hackathon.deploy.session import run_deploy_session
 from so101_hackathon.sim.robots.so101_follower_spec import joint_radians_to_motor_value
@@ -87,6 +86,23 @@ class _FakeFollower:
     def disconnect(self):
         """Disconnect the device."""
         self.disconnect_calls += 1
+
+
+class _FakeFollowerWithGripperOverload(_FakeFollower):
+    def __init__(self, observations: list[dict[str, float]], *, overload_at_gripper_pos: float):
+        """Initialize the object."""
+        super().__init__(observations)
+        self.overload_at_gripper_pos = float(overload_at_gripper_pos)
+        self.attempted_actions: list[dict[str, float]] = []
+
+    def send_action(self, action):
+        """Raise once gripper close commands exceed the configured threshold."""
+        recorded_action = dict(action)
+        self.attempted_actions.append(recorded_action)
+        gripper_pos = recorded_action.get("gripper.pos")
+        if gripper_pos is not None and gripper_pos > self.overload_at_gripper_pos:
+            raise RuntimeError("Failed to write 'Goal_Position' on id_=6 with '80' after 1 tries. Overload")
+        return super().send_action(recorded_action)
 
 
 class _RecordingRawController(RawController):
@@ -200,8 +216,75 @@ class DeploySessionTests(unittest.TestCase):
         self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 5.0, places=4)
         self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
 
+    def test_run_deploy_session_last_two_joints_bypass_controller_correction(self):
+        """Verify the last two joints always use the clean leader target."""
+        leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
+        follower = _FakeFollower([_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])])
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+
+        steps = run_deploy_session(
+            args=_args(),
+            leader=leader,
+            follower=follower,
+            controller=TeleopPDController(kp=0.5, kd=0.0, max_action=1.0),
+            observation_builder=LiveTeleopObservationBuilder(),
+            metrics=metrics,
+            lower_limits=lower_limits,
+            upper_limits=upper_limits,
+            sleep_fn=lambda _seconds: None,
+            num_iterations=1,
+        )
+
+        self.assertEqual(steps, 1)
+        sent_joint_pos = hardware_obs_to_joint_positions(follower.sent_actions[0])
+        leader_joint_pos = hardware_obs_to_joint_positions(_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0]))
+        self.assertAlmostEqual(sent_joint_pos[-2], leader_joint_pos[-2], places=6)
+        self.assertAlmostEqual(sent_joint_pos[-1], leader_joint_pos[-1], places=6)
+
+    def test_run_deploy_session_last_two_joints_bypass_fixed_disturbance(self):
+        """Verify the last two joints ignore fixed-channel delay and noise."""
+        leader = _FakeLeader(
+            [
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0]),
+                _robot_obs([20.0, 30.0, 40.0, 50.0, 70.0, 80.0]),
+            ]
+        )
+        follower = _FakeFollower(
+            [
+                _robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                _robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            ]
+        )
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+        args = _args()
+        args.delay_steps = 1
+        args.noise_std = 0.5
+
+        steps = run_deploy_session(
+            args=args,
+            leader=leader,
+            follower=follower,
+            controller=RawController(),
+            observation_builder=LiveTeleopObservationBuilder(),
+            metrics=metrics,
+            lower_limits=lower_limits,
+            upper_limits=upper_limits,
+            sleep_fn=lambda _seconds: None,
+            num_iterations=2,
+        )
+
+        self.assertEqual(steps, 2)
+        second_sent_joint_pos = hardware_obs_to_joint_positions(follower.sent_actions[1])
+        second_leader_joint_pos = hardware_obs_to_joint_positions(
+            _robot_obs([20.0, 30.0, 40.0, 50.0, 70.0, 80.0])
+        )
+        self.assertAlmostEqual(second_sent_joint_pos[-2], second_leader_joint_pos[-2], places=6)
+        self.assertAlmostEqual(second_sent_joint_pos[-1], second_leader_joint_pos[-1], places=6)
+
     def test_run_deploy_session_with_env_free_ppo_controller_uses_mocked_policy(self):
-        """Verify run deploy session with env free ppo controller uses mocked policy."""
+        """Verify PPO residuals do not affect the last two joints."""
         leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
         follower = _FakeFollower([_robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])])
         metrics = DeployMetricAccumulator()
@@ -233,12 +316,7 @@ class DeploySessionTests(unittest.TestCase):
                 "shoulder_pan", leader_joint_pos[0] + TELEOP_RESIDUAL_ACTION_SCALE * 0.1),
             places=4,
         )
-        gripper_lower, gripper_upper = parse_joint_limits_from_urdf()["gripper"]
-        expected_gripper_percent = 100.0 * (
-            ((leader_joint_pos[-1] + TELEOP_RESIDUAL_ACTION_SCALE * 0.6) - gripper_lower)
-            / (gripper_upper - gripper_lower)
-        )
-        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], expected_gripper_percent, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
 
     def test_run_deploy_session_delay_steps_holds_previous_command(self):
         """Verify run deploy session delay steps holds previous command."""
@@ -341,8 +419,77 @@ class DeploySessionTests(unittest.TestCase):
         self.assertEqual(steps, 1)
         self.assertNotIn("gripper.pos", follower.sent_actions[0])
 
+    def test_run_deploy_session_gripper_overload_holds_position_without_failing(self):
+        """Verify gripper overload keeps the session alive and stops further close commands."""
+        leader = _FakeLeader(
+            [
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0]),
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 80.0]),
+            ]
+        )
+        follower = _FakeFollowerWithGripperOverload(
+            [_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 50.0])] * 2,
+            overload_at_gripper_pos=70.0,
+        )
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+
+        steps = run_deploy_session(
+            args=_args(),
+            leader=leader,
+            follower=follower,
+            controller=RawController(),
+            observation_builder=LiveTeleopObservationBuilder(),
+            metrics=metrics,
+            lower_limits=lower_limits,
+            upper_limits=upper_limits,
+            sleep_fn=lambda _seconds: None,
+            num_iterations=2,
+        )
+
+        self.assertEqual(steps, 2)
+        self.assertEqual(metrics.summary()["num_steps"], 2.0)
+        self.assertEqual(len(follower.sent_actions), 2)
+        self.assertEqual(follower.sent_actions[0]["gripper.pos"], 60.0)
+        self.assertNotIn("gripper.pos", follower.sent_actions[1])
+        self.assertEqual(follower.attempted_actions[1]["gripper.pos"], 80.0)
+
+    def test_run_deploy_session_gripper_overload_clears_after_reopen(self):
+        """Verify reopening the leader gripper clears the overload hold."""
+        leader = _FakeLeader(
+            [
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0]),
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 80.0]),
+                _robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 40.0]),
+            ]
+        )
+        follower = _FakeFollowerWithGripperOverload(
+            [_robot_obs([0.0, 0.0, 0.0, 0.0, 0.0, 50.0])] * 3,
+            overload_at_gripper_pos=70.0,
+        )
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+
+        steps = run_deploy_session(
+            args=_args(),
+            leader=leader,
+            follower=follower,
+            controller=RawController(),
+            observation_builder=LiveTeleopObservationBuilder(),
+            metrics=metrics,
+            lower_limits=lower_limits,
+            upper_limits=upper_limits,
+            sleep_fn=lambda _seconds: None,
+            num_iterations=3,
+        )
+
+        self.assertEqual(steps, 3)
+        self.assertEqual(len(follower.sent_actions), 3)
+        self.assertNotIn("gripper.pos", follower.sent_actions[1])
+        self.assertEqual(follower.sent_actions[2]["gripper.pos"], 40.0)
+
     def test_run_deploy_session_ultrazohm_receives_lerobot_action_values(self):
-        """Verify UltraZohm receives LeRobot action values."""
+        """Verify UltraZohm input stays clean on the last two joints."""
         leader = _FakeLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
         follower = _FakeFollower([_robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])])
         metrics = DeployMetricAccumulator()
@@ -377,7 +524,7 @@ class DeploySessionTests(unittest.TestCase):
         self.assertAlmostEqual(sent_to_uzohm["shoulder_pan.pos"], 10.0, places=4)
         self.assertAlmostEqual(sent_to_uzohm["gripper.pos"], 60.0, places=4)
         self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 11.0, places=4)
-        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 61.0, places=4)
+        self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
 
     def test_run_deploy_session_ultrazohm_timeout_falls_back_to_raw_action(self):
         """Verify UltraZohm timeout falls back to raw action."""

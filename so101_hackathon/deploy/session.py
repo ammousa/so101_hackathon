@@ -15,7 +15,27 @@ from so101_hackathon.deploy.runtime import (
     normalize_controller_action,
 )
 from so101_hackathon.deploy.ultrazohm import UltraZohmDisturbanceChannel
-from so101_hackathon.utils.rl_utils import TELEOP_RESIDUAL_ACTION_SCALE, clamp_action
+from so101_hackathon.utils.rl_utils import TELEOP_JOINT_NAMES, TELEOP_RESIDUAL_ACTION_SCALE, clamp_action
+
+
+def _apply_clean_target_to_last_two_joints(
+    joint_positions: list[float],
+    clean_target: list[float],
+) -> list[float]:
+    """Keep the last two joints on the clean leader target."""
+    joint_positions[-2:] = clean_target[-2:]
+    return joint_positions
+
+
+def _is_gripper_overload_error(exc: Exception) -> bool:
+    """Return whether the exception looks like a gripper overload/stall."""
+    return "overload" in str(exc).lower()
+
+
+def _active_joint_names_without_gripper(active_joint_names: list[str] | None) -> list[str]:
+    """Return the configured active joints minus the gripper."""
+    source_joint_names = active_joint_names or list(TELEOP_JOINT_NAMES)
+    return [joint_name for joint_name in source_joint_names if joint_name != "gripper"]
 
 
 def run_deploy_session(
@@ -54,6 +74,7 @@ def run_deploy_session(
     disturbance_channel.reset()
     iter_idx = 0
     last_uzohm_timeout_warning_s = 0.0
+    gripper_hold_pos: float | None = None
 
     try:
         while True:
@@ -97,6 +118,10 @@ def run_deploy_session(
                     controller_action,
                     float(args.controller_coeff),
                 )
+            controller_command = _apply_clean_target_to_last_two_joints(
+                controller_command,
+                live_obs.leader_joint_pos,
+            )
             if disturbance_channel_name == "ultrazohm":
                 raw_commanded_joint_pos = clamp_joint_positions(
                     controller_command, lower_limits, upper_limits)
@@ -121,11 +146,46 @@ def run_deploy_session(
                     controller_command)
                 commanded_joint_pos = clamp_joint_positions(
                     disturbed_action, lower_limits, upper_limits)
+            commanded_joint_pos = _apply_clean_target_to_last_two_joints(
+                commanded_joint_pos,
+                live_obs.leader_joint_pos,
+            )
+            effective_active_joint_names = (
+                list(active_follower_joint_names) if active_follower_joint_names is not None else None
+            )
+            if gripper_hold_pos is not None:
+                if commanded_joint_pos[-1] > gripper_hold_pos:
+                    effective_active_joint_names = _active_joint_names_without_gripper(
+                        effective_active_joint_names
+                    )
+                    commanded_joint_pos[-1] = gripper_hold_pos
+                else:
+                    gripper_hold_pos = None
             follower_action = build_follower_action(
                 commanded_joint_pos,
-                active_joint_names=active_follower_joint_names,
+                active_joint_names=effective_active_joint_names,
             )
-            follower.send_action(follower_action)
+            try:
+                follower.send_action(follower_action)
+            except RuntimeError as exc:
+                gripper_requested = (
+                    effective_active_joint_names is None or "gripper" in effective_active_joint_names
+                )
+                if not gripper_requested or not _is_gripper_overload_error(exc):
+                    raise
+                gripper_hold_pos = live_obs.follower_joint_pos[-1]
+                print(
+                    "[WARN] Follower gripper reported overload; holding current gripper position "
+                    "and ignoring further close commands until the leader reopens."
+                )
+                commanded_joint_pos[-1] = gripper_hold_pos
+                follower_action = build_follower_action(
+                    commanded_joint_pos,
+                    active_joint_names=_active_joint_names_without_gripper(
+                        list(active_follower_joint_names) if active_follower_joint_names is not None else None
+                    ),
+                )
+                follower.send_action(follower_action)
             observation_builder.set_previous_action(controller_command)
 
             metrics.update(
