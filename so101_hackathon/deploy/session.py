@@ -62,7 +62,11 @@ def run_deploy_session(
 
             loop_start = time_fn()
             follower_observation = follower.get_observation()
-            leader_observation = leader.get_action()
+            try:
+                leader_observation = leader.get_action()
+            except StopIteration as exc:
+                print(f"[INFO] Leader trajectory completed: {exc}")
+                break
             sample_time = time_fn()
             dt = (
                 1.0 / max(int(getattr(args, "fps", DEFAULT_FPS)), 1)

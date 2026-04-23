@@ -1,0 +1,6 @@
+# csv_path: data/circle.csv
+# csv_path: data/spiral.csv
+csv_path: data/wobble_line.csv
+frequency_hz: 60
+cycles: 1
+return_to_start_steps: 120

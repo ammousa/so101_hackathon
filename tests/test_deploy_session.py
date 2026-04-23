@@ -100,6 +100,14 @@ class _RecordingRawController(RawController):
         return super().act(obs)
 
 
+class _StopAfterOneLeader(_FakeLeader):
+    def get_action(self):
+        """Return one action, then signal completion."""
+        if self.index >= 1:
+            raise StopIteration("done")
+        return super().get_action()
+
+
 def _args(controller_coeff: float = 1.0) -> argparse.Namespace:
     """Handle args."""
     return argparse.Namespace(
@@ -141,6 +149,30 @@ class DeploySessionTests(unittest.TestCase):
         self.assertEqual(len(follower.sent_actions), 1)
         self.assertAlmostEqual(follower.sent_actions[0]["shoulder_pan.pos"], 10.0, places=4)
         self.assertAlmostEqual(follower.sent_actions[0]["gripper.pos"], 60.0, places=4)
+        self.assertEqual(metrics.summary()["num_steps"], 1.0)
+
+    def test_run_deploy_session_exits_when_leader_trajectory_completes(self):
+        """Verify deploy stops cleanly when the leader trajectory completes."""
+        leader = _StopAfterOneLeader([_robot_obs([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])])
+        follower = _FakeFollower([_robot_obs([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])])
+        metrics = DeployMetricAccumulator()
+        lower_limits, upper_limits = get_joint_limit_vectors()
+
+        steps = run_deploy_session(
+            args=_args(),
+            leader=leader,
+            follower=follower,
+            controller=RawController(),
+            observation_builder=LiveTeleopObservationBuilder(),
+            metrics=metrics,
+            lower_limits=lower_limits,
+            upper_limits=upper_limits,
+            sleep_fn=lambda _seconds: None,
+            num_iterations=3,
+        )
+
+        self.assertEqual(steps, 1)
+        self.assertEqual(len(follower.sent_actions), 1)
         self.assertEqual(metrics.summary()["num_steps"], 1.0)
 
     def test_run_deploy_session_with_pd_controller_returns_absolute_targets(self):

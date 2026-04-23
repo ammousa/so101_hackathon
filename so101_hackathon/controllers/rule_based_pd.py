@@ -24,7 +24,7 @@ class TeleopPDController(BaseController):
     """
 
     kp: float = 1.0
-    kd: float = 0.15
+    kd: float = 0.0
     max_action: float = 1.0
 
     def act(self, obs: Any) -> Any:

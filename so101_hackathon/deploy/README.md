@@ -15,6 +15,7 @@ This package contains the real-hardware deployment helpers for the SO101 teleope
 - `runtime.py`: observation reconstruction, joint-limit handling, action blending, and artifact writing
 - `metrics.py`: deploy-time tracking metrics and time-series summaries
 - `session.py`: the controller-agnostic real-time deploy loop
+- `trajectory.py`: CSV leader trajectory source used by trajectory scenario scripts
 
 ## How it fits together
 
@@ -27,6 +28,11 @@ That script:
 - uses `LiveTeleopObservationBuilder` to feed the same observation layout that controllers see in simulation
 - blends controller output with direct leader teleop using `--controller-coeff` / `--rl_coeff`
 - writes deploy outputs under `logs/<controller>/deploy/...` or under the PPO training run when a checkpoint is used
+
+The CSV trajectory hardware CLI lives in `scripts/deploy/deploy_traj.py`.
+It replaces the live leader arm with the targets from `config/traj.yaml`, then
+runs the selected registered controller (`raw`, `pd`, or `ppo`) through the same
+deploy session and artifact path.
 
 ## PPO semantics
 
@@ -110,6 +116,35 @@ python scripts/deploy/deploy.py \
 ```
 
 `--controller-coeff 0.0` means pure leader teleop, and `--controller-coeff 1.0` means full controller output.
+
+## CSV trajectory scenario
+
+Use this when you want to test `raw`, `pd`, or `ppo` against a fixed leader
+trajectory instead of moving the SO101 leader arm by hand.
+
+`config/traj.yaml` selects the CSV file, frequency, number of cycles, and
+return-to-start duration:
+
+```yaml
+csv_path: data/circle.csv
+frequency_hz: 60
+cycles: 1
+return_to_start_steps: 60
+```
+
+Run the trajectory on real follower hardware with a controller:
+
+```bash
+python scripts/deploy/deploy_traj.py \
+  --controller pd \
+  --controller-config config/pd.yaml \
+  --trajectory-config config/traj.yaml \
+  --fps 60
+```
+
+After the configured number of cycles, the trajectory source completes, commands
+the exact follower start pose for `return_to_start_steps`, and exits cleanly. Those
+return-to-start commands are intentionally not recorded in the running metrics.
 
 ## Common arguments
 

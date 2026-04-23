@@ -29,6 +29,7 @@ from so101_hackathon.deploy.runtime import (
     hardware_obs_to_joint_positions,
 )
 from so101_hackathon.deploy.ultrazohm import UltraZohmDisturbanceChannel
+from so101_hackathon.deploy.trajectory import CSVJointTrajectory
 from so101_hackathon.registry import create_controller, list_controller_names
 from so101_hackathon.utils.rl_utils import (
     TELEOP_JOINT_NAMES,
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional YAML file with controller-specific overrides.",
+    )
+    parser.add_argument(
+        "--trajectory-config",
+        type=str,
+        default=None,
+        help="Optional CSV trajectory scenario config. When set, no SO101 leader is used.",
     )
     parser.add_argument(
         "--checkpoint-path",
@@ -387,6 +394,64 @@ class SO101LeaderTeleop:
             "motor_limits": SO101_FOLLOWER_MOTOR_LIMITS,
         }
         return self._env.cfg.preprocess_device_action(action)
+
+
+class CSVTrajectoryTeleop:
+    def __init__(self, env, trajectory: CSVJointTrajectory) -> None:
+        """Initialize the trajectory source."""
+        self._env = env
+        self._trajectory = trajectory
+        self._leader_api = "csv"
+
+    def close(self) -> None:
+        """No hardware resources are owned."""
+        return None
+
+    def display_controls(self) -> None:
+        """Display trajectory run information."""
+        print("Trajectory controls:")
+        print("  Ctrl+C: quit")
+
+    def reset(self) -> None:
+        """Restart the trajectory."""
+        self._trajectory.reset()
+
+    def pop_reset_requested(self) -> bool:
+        """CSV trajectory runs without manual reset hotkeys."""
+        return False
+
+    def pop_success_requested(self) -> bool:
+        """CSV trajectory runs without manual success hotkeys."""
+        return False
+
+    def advance(self):
+        """Return the next trajectory target as a sim action tensor."""
+        return self._action_for_target(self._trajectory.next_joint_target())
+
+    @property
+    def completed(self) -> bool:
+        """Return whether the CSV trajectory has completed."""
+        return self._trajectory.completed
+
+    @property
+    def return_to_start_steps(self) -> int:
+        """Return how many cleanup steps should hold the start target."""
+        return int(self._trajectory.return_to_start_steps)
+
+    def start_action(self):
+        """Return the first trajectory target as a sim action tensor."""
+        return self._action_for_target(self._trajectory.start_target)
+
+    def _action_for_target(self, target: list[float]):
+        """Convert one target list to an action tensor for the environment."""
+        import torch
+
+        action = torch.tensor(
+            target,
+            dtype=torch.float32,
+            device=getattr(self._env, "device", "cpu"),
+        )
+        return action.unsqueeze(0).expand(int(self._env.num_envs), -1)
 
 
 def _is_tensor(values: Any) -> bool:
@@ -732,8 +797,12 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(env, "termination_manager") and "success" in getattr(env.termination_manager, "active_terms", []):
         original_success_cfg = copy.deepcopy(
             env.termination_manager.get_term_cfg("success"))
-    teleop = SO101LeaderTeleop(
-        env, port=args.port, recalibrate=bool(args.recalibrate))
+    if args.trajectory_config is None:
+        teleop = SO101LeaderTeleop(
+            env, port=args.port, recalibrate=bool(args.recalibrate))
+    else:
+        teleop = CSVTrajectoryTeleop(
+            env, CSVJointTrajectory(**load_yaml(args.trajectory_config)))
     if args.disturbance_channel == "ultrazohm":
         disturbance_channel = UltraZohmDisturbanceChannel(
             can_iface=args.uzohm_can_iface,
@@ -754,6 +823,11 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(env, "initialize"):
         env.initialize()
     env.reset()
+    trajectory_start_action = (
+        _clone_action(read_follower_joint_positions(env))
+        if args.trajectory_config is not None
+        else None
+    )
     teleop.reset()
     controller.reset()
     observation_builder.reset()
@@ -764,6 +838,7 @@ def main(argv: list[str] | None = None) -> int:
 
     interrupted = False
     last_uzohm_warning_s = 0.0
+    trajectory_completed = False
 
     def signal_handler(signum, frame):
         """Handle shutdown signals."""
@@ -807,7 +882,12 @@ def main(argv: list[str] | None = None) -> int:
             if env.cfg.dynamic_reset_gripper_effort_limit:
                 dynamic_reset_gripper_effort_limit_sim(env, args.teleop_device)
 
-            leader_actions = teleop.advance()
+            try:
+                leader_actions = teleop.advance()
+            except StopIteration as exc:
+                print(f"[INFO] Leader trajectory completed: {exc}")
+                trajectory_completed = True
+                break
             if leader_actions is None:
                 env.render()
             else:
@@ -850,6 +930,23 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         print("[DEBUG] Entering teleop cleanup")
         signal.signal(signal.SIGINT, original_sigint_handler)
+        if (
+            trajectory_completed
+            and hasattr(teleop, "completed")
+            and teleop.completed
+            and not interrupted
+        ):
+            return_steps = int(teleop.return_to_start_steps)
+            if return_steps > 0:
+                print(
+                    f"[INFO] Returning to saved start pose for {return_steps} step(s).")
+                start_action = clamp_sim_joint_positions(
+                    trajectory_start_action if trajectory_start_action is not None else teleop.start_action(),
+                    env,
+                )
+                for _ in range(return_steps):
+                    env.step(start_action)
+                    rate_limiter.sleep(env)
         if viewport_layout is not None:
             viewport_layout.close()
         close_method = getattr(disturbance_channel, "close", None)

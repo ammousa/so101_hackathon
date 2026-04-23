@@ -36,6 +36,7 @@ class CliTests(unittest.TestCase):
         for script_path in (
             "scripts/train_rl.py",
             "scripts/deploy/deploy.py",
+            "scripts/deploy/deploy_traj.py",
             "scripts/deploy/calibrate_hardware.py",
         ):
             result = self._run(script_path, "--help")

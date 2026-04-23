@@ -180,6 +180,43 @@ Hotkeys:
 
 For real hardware: `scripts/deploy/deploy.py`
 
+#### Run a CSV trajectory scenario
+
+Use this when you want to test a normal controller (`raw`, `pd`, or `ppo`)
+against a repeatable CSV leader trajectory instead of moving the SO101 leader
+arm manually. The trajectory is configured in `config/traj.yaml`; it is not a
+controller.
+
+```yaml
+csv_path: data/circle.csv
+frequency_hz: 60
+cycles: 1
+return_to_start_steps: 60
+```
+
+Real follower hardware:
+
+```bash
+python scripts/deploy/deploy_traj.py \
+  --controller pd \
+  --controller-config config/pd.yaml \
+  --trajectory-config config/traj.yaml \
+  --fps 60
+```
+
+PickOrange sim:
+
+```bash
+python scripts/deploy/sim_pick_orange/traj.py \
+  --controller raw \
+  --trajectory-config config/traj.yaml \
+  --step_hz 60
+```
+
+After `cycles` passes through the CSV, the trajectory source completes, commands
+the exact follower start pose for `return_to_start_steps`, and exits cleanly. Those
+return-to-start commands are not included in the running metrics.
+
 ---
 
 ## 📁 Outputs and Artifacts

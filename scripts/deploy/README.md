@@ -4,7 +4,9 @@ This directory holds task-specific entrypoints that sit beside the shared contro
 
 ## Current task scripts
 
+- `deploy_traj.py`: run a CSV leader trajectory on real follower hardware through a registered controller
 - `sim_pick_orange/teleop.py`: launch the internal `PickOrange` task, read an SO101 leader arm, and run a registered controller in the loop
+- `sim_pick_orange/traj.py`: run the internal `PickOrange` task with a CSV leader trajectory instead of an SO101 leader arm
 
 ## PickOrange teleop arguments
 
@@ -36,6 +38,42 @@ python scripts/deploy/sim_pick_orange/teleop.py \
 - `--device`: Torch/Isaac device string.
 - `--enable_cameras`: enable RGB camera rendering.
 - `--headless`: run without the viewer.
+
+## CSV trajectory task
+
+Use `config/traj.yaml` to choose the CSV file, number of cycles, and
+return-to-start duration, then pass any registered controller with
+`--controller`.
+
+```yaml
+csv_path: data/circle.csv
+frequency_hz: 60
+cycles: 1
+return_to_start_steps: 60
+```
+
+Real follower hardware:
+
+```bash
+python scripts/deploy/deploy_traj.py \
+  --controller pd \
+  --controller-config config/pd.yaml \
+  --trajectory-config config/traj.yaml \
+  --fps 60
+```
+
+PickOrange sim:
+
+```bash
+python scripts/deploy/sim_pick_orange/traj.py \
+  --controller raw \
+  --trajectory-config config/traj.yaml \
+  --step_hz 60
+```
+
+After the CSV completes, the trajectory task commands the exact follower start pose for
+`return_to_start_steps` extra control steps and then exits. Those cleanup steps
+are not included in deploy metrics.
 
 UltraZohm example:
 
